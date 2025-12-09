@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Optional: a dedicated Studio root view if needed elsewhere.
-/// This is NOT an App entry point.
+/// Optional: not an App, just a View.
 struct VPPStudioRoot: View {
     @StateObject private var workspaceVM = WorkspaceViewModel()
 
