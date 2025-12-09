@@ -14,21 +14,29 @@ struct SessionView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            MessageListView(messages: messages)
-            Divider()
-            ComposerView(
-                draft: $viewModel.draftText,
-                modifiers: $viewModel.currentModifiers,
-                sources: $viewModel.currentSources,
-                runtime: appViewModel.runtime,
-                sendAction: viewModel.send,
-                tagSelection: viewModel.setTag,
-                stepCycle: viewModel.stepCycle,
-                resetCycle: viewModel.resetCycle
-            )
-            .padding()
-            .background(.regularMaterial)
+        ZStack {
+            LinearGradient(colors: [Color(white: 0.12, opacity: 0.6), Color.clear], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                MessageListView(messages: messages)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+
+                ComposerView(
+                    draft: $viewModel.draftText,
+                    modifiers: $viewModel.currentModifiers,
+                    sources: $viewModel.currentSources,
+                    runtime: appViewModel.runtime,
+                    sendAction: viewModel.send,
+                    tagSelection: viewModel.setTag,
+                    stepCycle: viewModel.stepCycle,
+                    resetCycle: viewModel.resetCycle
+                )
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .background(.thinMaterial)
+            }
         }
         .navigationTitle(session.name)
     }
