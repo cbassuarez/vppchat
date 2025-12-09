@@ -1,0 +1,238 @@
+// !$*UTF8*$!
+{
+archiveVersion = 1;
+classes = {};
+objectVersion = 56;
+objects = {
+
+/* Begin PBXBuildFile section */
+C0F0AA2014E4D7D500000001 /* VPPConsoleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA0B14E4D7D500000001 /* VPPConsoleApp.swift */; };
+C0F0AA2114E4D7D500000001 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA0C14E4D7D500000001 /* RootView.swift */; };
+C0F0AA2214E4D7D500000001 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA0D14E4D7D500000001 /* SidebarView.swift */; };
+C0F0AA2314E4D7D500000001 /* SessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA0E14E4D7D500000001 /* SessionView.swift */; };
+C0F0AA2414E4D7D500000001 /* MessageListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA0F14E4D7D500000001 /* MessageListView.swift */; };
+C0F0AA2514E4D7D500000001 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1014E4D7D500000001 /* ComposerView.swift */; };
+C0F0AA2614E4D7D500000001 /* TagChipsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1114E4D7D500000001 /* TagChipsView.swift */; };
+C0F0AA2714E4D7D500000001 /* SessionInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1214E4D7D500000001 /* SessionInspectorView.swift */; };
+C0F0AA2814E4D7D500000001 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1314E4D7D500000001 /* AppViewModel.swift */; };
+C0F0AA2914E4D7D500000001 /* SessionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1414E4D7D500000001 /* SessionViewModel.swift */; };
+C0F0AA2A14E4D7D500000001 /* VppTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1514E4D7D500000001 /* VppTypes.swift */; };
+C0F0AA2B14E4D7D500000001 /* VppRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1614E4D7D500000001 /* VppRuntime.swift */; };
+C0F0AA2C14E4D7D500000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1714E4D7D500000001 /* Models.swift */; };
+C0F0AA2D14E4D7D500000001 /* InMemoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1814E4D7D500000001 /* InMemoryStore.swift */; };
+C0F0AA2E14E4D7D500000001 /* LlmClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F0AA1914E4D7D500000001 /* LlmClient.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+C0F0AA0B14E4D7D500000001 /* VPPConsoleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/App/VPPConsoleApp.swift; };
+C0F0AA0C14E4D7D500000001 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/UI/RootView.swift; };
+C0F0AA0D14E4D7D500000001 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/UI/SidebarView.swift; };
+C0F0AA0E14E4D7D500000001 /* SessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/UI/SessionView.swift; };
+C0F0AA0F14E4D7D500000001 /* MessageListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/UI/MessageListView.swift; };
+C0F0AA1014E4D7D500000001 /* ComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/UI/ComposerView.swift; };
+C0F0AA1114E4D7D500000001 /* TagChipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/UI/TagChipsView.swift; };
+C0F0AA1214E4D7D500000001 /* SessionInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/UI/SessionInspectorView.swift; };
+C0F0AA1314E4D7D500000001 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/ViewModels/AppViewModel.swift; };
+C0F0AA1414E4D7D500000001 /* SessionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/ViewModels/SessionViewModel.swift; };
+C0F0AA1514E4D7D500000001 /* VppTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/Core/VppTypes.swift; };
+C0F0AA1614E4D7D500000001 /* VppRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/Core/VppRuntime.swift; };
+C0F0AA1714E4D7D500000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/Core/Models.swift; };
+C0F0AA1814E4D7D500000001 /* InMemoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/Core/InMemoryStore.swift; };
+C0F0AA1914E4D7D500000001 /* LlmClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPPConsole/Core/LlmClient.swift; };
+C0F0AA1B14E4D7D500000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = VPPConsole/Info.plist; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+C0F0A9FC14E4D7D500000001 /* Frameworks */ = {
+isa = PBXFrameworksBuildPhase;
+buildActionMask = 2147483647;
+files = (
+);
+runOnlyForDeploymentPostprocessing = 0;
+};
+C0F0A9FD14E4D7D500000001 /* Resources */ = {
+isa = PBXResourcesBuildPhase;
+buildActionMask = 2147483647;
+files = (
+);
+runOnlyForDeploymentPostprocessing = 0;
+};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+C0F0A9F614E4D7D500000001 = {
+isa = PBXGroup;
+children = (
+C0F0AA0B14E4D7D500000001 /* VPPConsoleApp.swift */,
+C0F0AA0C14E4D7D500000001 /* RootView.swift */,
+C0F0AA0D14E4D7D500000001 /* SidebarView.swift */,
+C0F0AA0E14E4D7D500000001 /* SessionView.swift */,
+C0F0AA0F14E4D7D500000001 /* MessageListView.swift */,
+C0F0AA1014E4D7D500000001 /* ComposerView.swift */,
+C0F0AA1114E4D7D500000001 /* TagChipsView.swift */,
+C0F0AA1214E4D7D500000001 /* SessionInspectorView.swift */,
+C0F0AA1314E4D7D500000001 /* AppViewModel.swift */,
+C0F0AA1414E4D7D500000001 /* SessionViewModel.swift */,
+C0F0AA1514E4D7D500000001 /* VppTypes.swift */,
+C0F0AA1614E4D7D500000001 /* VppRuntime.swift */,
+C0F0AA1714E4D7D500000001 /* Models.swift */,
+C0F0AA1814E4D7D500000001 /* InMemoryStore.swift */,
+C0F0AA1914E4D7D500000001 /* LlmClient.swift */,
+C0F0AA1B14E4D7D500000001 /* Info.plist */,
+);
+sourceTree = "<group>";
+};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+C0F0A9FA14E4D7D500000001 /* VPPConsole */ = {
+isa = PBXNativeTarget;
+buildConfigurationList = C0F0AA1F14E4D7D500000001 /* Build configuration list for PBXNativeTarget "VPPConsole" */;
+buildPhases = (
+C0F0A9FB14E4D7D500000001 /* Sources */,
+C0F0A9FC14E4D7D500000001 /* Frameworks */,
+C0F0A9FD14E4D7D500000001 /* Resources */,
+);
+buildRules = (
+);
+dependencies = (
+);
+name = VPPConsole;
+productName = VPPConsole;
+productType = "com.apple.product-type.application";
+};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+C0F0A9F714E4D7D500000001 /* Project object */ = {
+isa = PBXProject;
+attributes = {
+LastSwiftUpdateCheck = 1500;
+LastUpgradeCheck = 1500;
+TargetAttributes = {
+C0F0A9FA14E4D7D500000001 = {
+DevelopmentTeam = "";
+ProvisioningStyle = Automatic;
+};
+};
+};
+buildConfigurationList = C0F0AA1E14E4D7D500000001 /* Build configuration list for PBXProject "VPPConsole" */;
+compatibilityVersion = "Xcode 14.0";
+developmentRegion = en;
+hasScannedForEncodings = 0;
+knownRegions = (
+en,
+);
+mainGroup = C0F0A9F614E4D7D500000001;
+productRefGroup = C0F0A9F614E4D7D500000001;
+projectDirPath = "";
+projectRoot = "";
+targets = (
+C0F0A9FA14E4D7D500000001 /* VPPConsole */,
+);
+};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+C0F0A9FB14E4D7D500000001 /* Sources */ = {
+isa = PBXSourcesBuildPhase;
+buildActionMask = 2147483647;
+files = (
+                C0F0AA2014E4D7D500000001 /* VPPConsoleApp.swift in Sources */,
+C0F0AA2114E4D7D500000001 /* RootView.swift in Sources */,
+C0F0AA2214E4D7D500000001 /* SidebarView.swift in Sources */,
+C0F0AA2314E4D7D500000001 /* SessionView.swift in Sources */,
+C0F0AA2414E4D7D500000001 /* MessageListView.swift in Sources */,
+C0F0AA2514E4D7D500000001 /* ComposerView.swift in Sources */,
+C0F0AA2614E4D7D500000001 /* TagChipsView.swift in Sources */,
+C0F0AA2714E4D7D500000001 /* SessionInspectorView.swift in Sources */,
+C0F0AA2814E4D7D500000001 /* AppViewModel.swift in Sources */,
+C0F0AA2914E4D7D500000001 /* SessionViewModel.swift in Sources */,
+C0F0AA2A14E4D7D500000001 /* VppTypes.swift in Sources */,
+C0F0AA2B14E4D7D500000001 /* VppRuntime.swift in Sources */,
+C0F0AA2C14E4D7D500000001 /* Models.swift in Sources */,
+C0F0AA2D14E4D7D500000001 /* InMemoryStore.swift in Sources */,
+C0F0AA2E14E4D7D500000001 /* LlmClient.swift in Sources */,
+);
+runOnlyForDeploymentPostprocessing = 0;
+};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+C0F0AA1C14E4D7D500000001 /* Debug */ = {
+isa = XCBuildConfiguration;
+buildSettings = {
+ALWAYS_SEARCH_USER_PATHS = NO;
+CLANG_ANALYZER_NONNULL = YES;
+CLANG_ENABLE_OBJC_ARC = YES;
+CODE_SIGN_STYLE = Automatic;
+DEVELOPMENT_TEAM = "";
+ENABLE_PREVIEWS = YES;
+INFOPLIST_FILE = VPPConsole/Info.plist;
+MACOSX_DEPLOYMENT_TARGET = 14.0;
+PRODUCT_BUNDLE_IDENTIFIER = com.example.vppconsole;
+PRODUCT_NAME = "$(TARGET_NAME)";
+SDKROOT = macosx;
+                SWIFT_VERSION = 5.9;
+TARGETED_DEVICE_FAMILY = "1,2";
+};
+name = Debug;
+};
+C0F0AA1D14E4D7D500000001 /* Release */ = {
+isa = XCBuildConfiguration;
+buildSettings = {
+ALWAYS_SEARCH_USER_PATHS = NO;
+CLANG_ANALYZER_NONNULL = YES;
+CLANG_ENABLE_OBJC_ARC = YES;
+CODE_SIGN_STYLE = Automatic;
+DEVELOPMENT_TEAM = "";
+ENABLE_PREVIEWS = YES;
+INFOPLIST_FILE = VPPConsole/Info.plist;
+MACOSX_DEPLOYMENT_TARGET = 14.0;
+PRODUCT_BUNDLE_IDENTIFIER = com.example.vppconsole;
+PRODUCT_NAME = "$(TARGET_NAME)";
+SDKROOT = macosx;
+                SWIFT_VERSION = 5.9;
+TARGETED_DEVICE_FAMILY = "1,2";
+};
+name = Release;
+};
+C0F0AA1A14E4D7D500000001 /* Debug */ = {
+isa = XCBuildConfiguration;
+            buildSettings = {
+                SWIFT_VERSION = 5.9;
+            };
+name = Debug;
+};
+C0F0AA1B14E4D7D500000001 /* Release */ = {
+isa = XCBuildConfiguration;
+            buildSettings = {
+                SWIFT_VERSION = 5.9;
+            };
+name = Release;
+};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+C0F0AA1E14E4D7D500000001 /* Build configuration list for PBXProject "VPPConsole" */ = {
+isa = XCConfigurationList;
+buildConfigurations = (
+C0F0AA1A14E4D7D500000001 /* Debug */,
+C0F0AA1B14E4D7D500000001 /* Release */,
+);
+defaultConfigurationIsVisible = 0;
+defaultConfigurationName = Debug;
+};
+C0F0AA1F14E4D7D500000001 /* Build configuration list for PBXNativeTarget "VPPConsole" */ = {
+isa = XCConfigurationList;
+buildConfigurations = (
+C0F0AA1C14E4D7D500000001 /* Debug */,
+C0F0AA1D14E4D7D500000001 /* Release */,
+);
+defaultConfigurationIsVisible = 0;
+defaultConfigurationName = Debug;
+};
+/* End XCConfigurationList section */
+};
+rootObject = C0F0A9F714E4D7D500000001 /* Project object */;
+}
