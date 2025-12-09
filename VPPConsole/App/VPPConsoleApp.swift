@@ -1,19 +1,11 @@
 import SwiftUI
 
-@main
-struct VPPConsoleApp: App {
+/// Root view for the console experience; not an app entry point.
+struct VPPConsoleRoot: View {
     @StateObject private var appViewModel = AppViewModel()
 
-    var body: some Scene {
-        WindowGroup {
-            RootView()
-                .environmentObject(appViewModel)
-        }
-        .commands {
-            CommandGroup(after: .newItem) {
-                Button("New Session", action: { appViewModel.createNewSession(in: appViewModel.store.folders.first) })
-                    .keyboardShortcut("n", modifiers: .command)
-            }
-        }
+    var body: some View {
+        RootView()
+            .environmentObject(appViewModel)
     }
 }
