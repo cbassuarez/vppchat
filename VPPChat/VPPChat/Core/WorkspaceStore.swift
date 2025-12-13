@@ -30,6 +30,21 @@ final class WorkspaceStore: ObservableObject {
         return scenes[id]
     }
 
+    func track(for sceneID: Scene.ID) -> Track? {
+        guard let scene = scene(id: sceneID) else { return nil }
+        return track(id: scene.trackID)
+    }
+
+    func project(for trackID: Track.ID) -> Project? {
+        guard let track = track(id: trackID) else { return nil }
+        return project(id: track.projectID)
+    }
+
+    func project(for block: Block) -> Project? {
+        guard let track = track(for: block.sceneID) else { return nil }
+        return project(id: track.projectID)
+    }
+
     func blocks(in scene: Scene) -> [Block] {
         blocks.values
             .filter { $0.sceneID == scene.id }
@@ -92,5 +107,9 @@ final class WorkspaceStore: ObservableObject {
         tracks[track.id] = track
         scenes[scene.id] = scene
         blocks[block.id] = block
+    }
+
+    func allBlocksSortedByUpdatedAtDescending() -> [Block] {
+        blocks.values.sorted { $0.updatedAt > $1.updatedAt }
     }
 }

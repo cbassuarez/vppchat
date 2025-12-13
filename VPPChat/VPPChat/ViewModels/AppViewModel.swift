@@ -34,6 +34,14 @@ final class AppViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    var selectedSession: Session? {
+        store.session(id: selectedSessionID)
+    }
+
+    var selectedFolder: Folder? {
+        store.folders.first { $0.id == selectedFolderID }
+    }
+
     func selectFolder(_ folder: Folder) {
         selectedFolderID = folder.id
     }

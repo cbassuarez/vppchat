@@ -66,4 +66,16 @@ final class WorkspaceViewModel: ObservableObject {
     func select(scene: Scene) {
         selectedSceneID = scene.id
     }
+
+    func select(block: Block) {
+        guard let scene = store.scene(id: block.sceneID),
+              let track = store.track(id: scene.trackID),
+              let project = store.project(id: track.projectID) else {
+            return
+        }
+
+        selectedProjectID = project.id
+        selectedTrackID = track.id
+        selectedSceneID = scene.id
+    }
 }
