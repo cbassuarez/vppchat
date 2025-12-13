@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TracksRailView: View {
     @EnvironmentObject private var vm: WorkspaceViewModel
+    @EnvironmentObject private var theme: ThemeManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -79,14 +80,16 @@ struct TracksRailView: View {
                             HStack {
                                 Text(scene.title)
                                     .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(vm.selectedSceneID == scene.id ? StudioTheme.Colors.accent : StudioTheme.Colors.textSecondary)
+                                    .foregroundStyle(vm.selectedSceneID == scene.id
+                                                     ? theme.structuralAccent
+                                                     : StudioTheme.Colors.textSecondary)
                                 Spacer()
                             }
                             .padding(.vertical, 4)
                             .padding(.horizontal, 8)
                             .background(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(vm.selectedSceneID == scene.id ? StudioTheme.Colors.accentSoft : Color.clear)
+                                    .fill(vm.selectedSceneID == scene.id ? theme.structuralAccent.opacity(0.16) : Color.clear)
                             )
                         }
                         .buttonStyle(.plain)

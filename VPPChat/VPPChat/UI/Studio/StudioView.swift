@@ -2,10 +2,28 @@ import SwiftUI
 
 struct StudioView: View {
     @EnvironmentObject private var vm: WorkspaceViewModel
+    @EnvironmentObject private var theme: ThemeManager                        // ✅
 
     var body: some View {
         VStack(spacing: 14) {
             header
+
+            Menu {
+                ForEach(AccentPalette.allCases, id: \.self) { palette in
+                    Button {
+                        theme.palette = palette           // ✅ single source of truth
+                    } label: {
+                        HStack {
+                            Text(palette.rawValue.capitalized)
+                            if palette == theme.palette { // ✅ highlight current
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "paintpalette")
+            }
 
             HStack(alignment: .top, spacing: 14) {
                 TracksRailView()
@@ -40,7 +58,7 @@ struct StudioView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-    }
+    } 
 
     private var header: some View {
         HStack(spacing: 10) {

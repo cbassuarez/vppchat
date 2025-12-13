@@ -16,14 +16,23 @@ enum AppTheme {
         static let surface1 = Color(red: 17/255, green: 22/255, blue: 36/255).opacity(0.88)
         static let surface2 = Color(red: 22/255, green: 28/255, blue: 46/255).opacity(0.96)
 
-        // Accent families
-        // Structural tags (G, Q, O, C, O_F)
-        static let structuralAccent = Color(red: 0.49, green: 0.50, blue: 1.0)      // ~violet/indigo
-        static let structuralAccentSoft = structuralAccent.opacity(0.18)
+        // Accent families (driven by AccentPalette)
+        static var structuralAccent: Color {
+            AccentPalette.current.structural
+        }
 
-        // Exception tags (E, E_O)
-        static let exceptionAccent = Color(red: 1.0, green: 0.31, blue: 0.63)       // ~magenta/red
-        static let exceptionAccentSoft = exceptionAccent.opacity(0.18)
+        static var structuralAccentSoft: Color {
+            structuralAccent.opacity(0.18)
+        }
+
+        static var exceptionAccent: Color {
+            AccentPalette.current.exception
+        }
+
+        static var exceptionAccentSoft: Color {
+            exceptionAccent.opacity(0.18)
+        }
+
 
         // Status
         static let statusCorrect = Color(red: 0.31, green: 0.89, blue: 0.56)
@@ -77,5 +86,40 @@ struct NoiseBackground: View {
                     .opacity(0.6)
             )
             .ignoresSafeArea()
+    }
+}
+enum AccentPalette: String, CaseIterable {
+    case ocean
+    case forest
+    case ember
+    case graphite
+
+    // Change this to pick your default
+    static var current: AccentPalette = .graphite
+
+    var structural: Color {
+        switch self {
+        case .ocean:
+            return Color(red: 0.00, green: 0.39, blue: 0.78)
+        case .forest:
+            return Color(red: 0.11, green: 0.55, blue: 0.38)
+        case .ember:
+            return Color(red: 0.74, green: 0.29, blue: 0.21)
+        case .graphite:
+            return Color(red: 0.18, green: 0.20, blue: 0.26)
+        }
+    }
+
+    var exception: Color {
+        switch self {
+        case .ocean:
+            return Color(red: 0.92, green: 0.31, blue: 0.39)
+        case .forest:
+            return Color(red: 0.84, green: 0.30, blue: 0.28)
+        case .ember:
+            return Color(red: 0.16, green: 0.30, blue: 0.60)
+        case .graphite:
+            return Color(red: 0.75, green: 0.34, blue: 0.38)
+        }
     }
 }

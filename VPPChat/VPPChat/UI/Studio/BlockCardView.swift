@@ -67,8 +67,7 @@ struct BlockCardView: View {
                         .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
                 )
         )
-        .clipShape(RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous))
-        .shadow(color: .black.opacity(0.4), radius: 18, x: 0, y: 12)
+        .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 12)
     }
 
     private func chip(_ label: String) -> some View {

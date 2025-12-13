@@ -44,80 +44,66 @@ struct StudioComposerView: View {
     let scene: Scene
 
     @State private var draft: String = ""
+    @State private var modifiers = VppModifiers()
+    @State private var sources: VppSources = .none
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Compose")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(StudioTheme.Colors.textPrimary)
-
-            TextEditor(text: $draft)
-                .font(.system(size: 13))
-                .foregroundStyle(StudioTheme.Colors.textPrimary)
-                .padding(10)
-                .frame(minHeight: 90)
-                .background(
-                    RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
-                                .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
-                        )
-                )
-
-            HStack {
-                Spacer()
-                Button(action: sendDraft) {
-                    Label("Send", systemImage: "paperplane.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(StudioTheme.Colors.accent)
-                        )
-                        .foregroundStyle(.white)
-                }
-                .buttonStyle(.plain)
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.6 : 1)
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
-                .fill(.thinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
-                        .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
-                )
+        ComposerView(
+            draft: $draft,
+            modifiers: $modifiers,
+            sources: $sources,
+            runtime: vm.vppRuntime,
+            sendAction: sendDraft,
+            tagSelection: { tag in vm.vppRuntime.setTag(tag) },
+            stepCycle: stepCycle,
+            resetCycle: resetCycle
         )
     }
+
+    // MARK: - VPP helpers
+
+    private func stepCycle() {
+        // Simple 1→2→3→1 loop for now
+        let current = vm.vppRuntime.state.cycleIndex
+        vm.vppRuntime.state.cycleIndex = current >= 3 ? 1 : current + 1
+    }
+
+    private func resetCycle() {
+        vm.vppRuntime.state.cycleIndex = 1
+    }
+
+    // MARK: - Send
 
     private func sendDraft() {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+
+        let state = vm.vppRuntime.state
 
         let message = Message(
             id: UUID(),
             isUser: true,
             timestamp: .now,
             body: trimmed,
-            tag: vm.vppRuntime.state.currentTag,
-            cycleIndex: vm.vppRuntime.state.cycleIndex,
-            assumptions: vm.vppRuntime.state.assumptions,
-            sources: .none,
-            locus: vm.vppRuntime.state.locus,
+            tag: state.currentTag,
+            cycleIndex: state.cycleIndex,
+            assumptions: state.assumptions,
+            sources: sources,
+            locus: state.locus,
             isValidVpp: true,
             validationIssues: []
         )
 
+        let subtitle = "<\(message.tag.rawValue)_\(message.cycleIndex)> · \(message.assumptions) assumptions"
+
         let newBlock = Block(
             sceneID: scene.id,
             kind: .conversation,
-            title: "New Interaction",
-            subtitle: "<\(message.tag.rawValue)_\(message.cycleIndex)>",
+            title: "Interaction \(state.cycleIndex)",
+            subtitle: subtitle,
             messages: [message],
+            documentText: nil,
+            isCanonical: false,
             createdAt: .now,
             updatedAt: .now
         )
@@ -126,3 +112,4 @@ struct StudioComposerView: View {
         draft = ""
     }
 }
+
