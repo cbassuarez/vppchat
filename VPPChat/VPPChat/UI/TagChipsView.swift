@@ -28,9 +28,9 @@ struct TagChipsView: View {
                                 if selected == tag {
                                     accent(for: tag)
                                         .opacity(0.22)
-                                        .shadow(color: accent(for: tag).opacity(0.4), radius: 8, x: 0, y: 6)
+                                        .shadow(color: accent(for: tag).opacity(0.2), radius: 6, x: 6, y: 6)
                                 } else {
-                                    AppTheme.Colors.surface1.opacity(0.4)
+                                    AppTheme.Colors.surface2.opacity(0.4)
                                 }
                             }
                         )

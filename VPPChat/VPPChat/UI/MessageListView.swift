@@ -78,15 +78,21 @@ struct MessageRow: View {
         }
         .padding(AppTheme.Spacing.cardInner)
         .background(
-            AppTheme.Colors.surface1
-                .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous))
+            ZStack {
+            
+
+                RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
+                    .fill(AppTheme.Colors.surface1)
+            }
+            .clipShape(
+                RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
+            )
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
                 .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.45), radius: 24, x: 0, y: 16)
+        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 6, y: 6)
     }
 
     private func metaChip(label: String, value: String) -> some View {
@@ -99,7 +105,11 @@ struct MessageRow: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(AppTheme.Colors.surface0.opacity(0.7))
+        .background(
+            AppTheme.Colors.surface1
+                .opacity(0.9)
+                .background(AppTheme.Colors.surface2)
+        )
         .clipShape(Capsule())
     }
 

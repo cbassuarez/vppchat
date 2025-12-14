@@ -23,7 +23,7 @@ struct SceneCanvasView: View {
         }
         .padding(12)
         .background(
-            .thinMaterial,
+            AppTheme.Colors.surface1,
             in: RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
         )
     }

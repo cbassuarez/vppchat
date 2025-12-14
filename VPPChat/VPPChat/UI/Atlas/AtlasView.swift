@@ -1,5 +1,24 @@
 import SwiftUI
 
+// MARK: - Atlas filter popover plumbing
+
+private enum AtlasPopover: Hashable {
+    case project
+    case kind
+    case tags
+}
+
+private struct FilterChipAnchorKey: PreferenceKey {
+    static var defaultValue: [AtlasPopover: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [AtlasPopover: Anchor<CGRect>],
+                       nextValue: () -> [AtlasPopover: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+// MARK: - Main Atlas View
+
 struct AtlasView: View {
     var onOpenInStudio: ((Block) -> Void)? = nil
     var onSendToConsole: ((Block) -> Void)? = nil
@@ -7,172 +26,178 @@ struct AtlasView: View {
     @EnvironmentObject private var workspaceVM: WorkspaceViewModel
     @StateObject private var filters = AtlasFilterState()
 
-    var body: some View {
-        VStack(spacing: 12) {
-            filtersBand
+    // Which dropdown is currently open
+    @State private var activePopover: AtlasPopover? = nil
 
-            if filteredBlocks.isEmpty {
-                emptyState
-            } else {
-                ScrollView {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 260), spacing: 16)],
-                        spacing: 16
-                    ) {
-                        ForEach(filteredBlocks) { block in
-                            BlockCardView(block: block)
-                                .contextMenu {
-                                    Button("Open in Studio") {
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            VStack(spacing: 12) {
+                filtersBand
+
+                if filteredBlocks.isEmpty {
+                    emptyState
+                } else {
+                    ScrollView {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 260), spacing: 16)],
+                            spacing: 16
+                        ) {
+                            ForEach(filteredBlocks) { block in
+                                BlockCardView(block: block)
+                                    .contextMenu {
+                                        Button("Open in Studio") {
+                                            openInStudio(block: block)
+                                        }
+                                        Button("Send to Console") {
+                                            sendToConsole(block: block)
+                                        }
+                                    }
+                                    .onTapGesture(count: 2) {
                                         openInStudio(block: block)
                                     }
-                                    Button("Send to Console") {
-                                        sendToConsole(block: block)
-                                    }
-                                }
-                                .onTapGesture(count: 2) {
-                                    openInStudio(block: block)
-                                }
+                            }
+                            .padding(.bottom, 8)
                         }
-                        .padding(.bottom, 8)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.vertical, 8)
                 }
             }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
-                .fill(StudioTheme.Colors.surface1)
-                .overlay(
+            .padding(12)
+            .background(
+                ZStack {
+
                     RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
-                        .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
-                )
-        )
+                        .fill(AppTheme.Colors.surface1) // a bit lighter / more glassy
+                        .overlay(
+                            RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
+                                .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
+                        )
+                }
+            )
+        }
+        // Toolbar-style popovers, anchored to each chip via preferences + geometry
+        .overlayPreferenceValue(FilterChipAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                ZStack(alignment: .topLeading) {
+                    if let active = activePopover,
+                       let anchor = anchors[active] {
+                        let rect = proxy[anchor]
+
+                        popover(for: active)
+                            // 👇 Hug content horizontally, don’t fill the whole width
+                            .fixedSize(horizontal: true, vertical: true)
+                            // 👇 Cap the width so long project names don’t explode the popover
+                            .frame(maxWidth: 320, alignment: .leading)
+                            // 👇 Position directly under the chip
+                            .offset(x: rect.minX,
+                                    y: rect.maxY + 8)
+                    }
+                }
+                .frame(maxWidth: .infinity,
+                       maxHeight: .infinity,
+                       alignment: .topLeading)
+            }
+        }
+
     }
+
+    // MARK: - Filters band (toolbar)
 
     private var filtersBand: some View {
         HStack(spacing: 10) {
-            projectFilter
-            kindFilter
-            tagFilter
-            canonicalToggle
+            projectFilterChip
+            kindFilterChip
+            tagsFilterChip
+            canonicalChip
 
             Spacer()
 
             searchField
-
-            if hasActiveFilters {
-                Button("Reset") {
-                    resetFilters()
-                }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(StudioTheme.Colors.textSecondary)
-                .buttonStyle(.plain)
-            }
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10) // slightly taller than before
+        .frame(maxWidth: 900)   // inset, toolbar-like
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(StudioTheme.Colors.surface2)
+                .fill(StudioTheme.Colors.surface1)
         )
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
-    private var projectFilter: some View {
-        Menu {
-            Button("All Projects") {
-                filters.selectedProjectID = nil
-            }
-            ForEach(workspaceVM.store.allProjects) { project in
-                Button(project.name) {
-                    filters.selectedProjectID = project.id
-                }
+    // MARK: - Individual chips
+
+    private var projectFilterChip: some View {
+        let isActive = filters.selectedProjectID != nil
+        let labelText = filters.selectedProjectID.flatMap { id in
+            workspaceVM.store.project(id: id)?.name
+        } ?? "All Projects"
+
+        return FilterChip(isActive: isActive, primary: true) {
+            withAnimation(.easeOut(duration: 0.18)) {
+                activePopover = (activePopover == .project ? nil : .project)
             }
         } label: {
-            HStack(spacing: 6) {
-                Text(filters.selectedProjectID.flatMap { id in
-                    workspaceVM.store.project(id: id)?.name
-                } ?? "All Projects")
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(StudioTheme.Colors.surface1)
-            )
-            .foregroundStyle(StudioTheme.Colors.textSecondary)
+            Text(labelText)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .anchorPreference(key: FilterChipAnchorKey.self, value: .bounds) { anchor in
+            [.project: anchor]
         }
     }
 
-    private var kindFilter: some View {
-        Menu {
-            Button("Any kind") {
-                filters.kind = nil
-            }
-            Button("Conversation") {
-                filters.kind = .conversation
-            }
-            Button("Document") {
-                filters.kind = .document
-            }
-            Button("Reference") {
-                filters.kind = .reference
+    private var kindFilterChip: some View {
+        let isActive = (filters.kind != nil)
+
+        return FilterChip(isActive: isActive, primary: false) {
+            withAnimation(.easeOut(duration: 0.18)) {
+                activePopover = (activePopover == .kind ? nil : .kind)
             }
         } label: {
-            HStack(spacing: 6) {
-                Text(kindLabel)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                Capsule()
-                    .fill(StudioTheme.Colors.surface1)
-            )
-            .foregroundStyle(StudioTheme.Colors.textSecondary)
+            Text(kindLabel)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .anchorPreference(key: FilterChipAnchorKey.self, value: .bounds) { anchor in
+            [.kind: anchor]
         }
     }
 
-    private var tagFilter: some View {
-        HStack(spacing: 4) {
-            ForEach(VppTag.allCases, id: \.self) { tag in
-                let isOn = filters.selectedTags.contains(tag)
-                Button {
-                    if isOn {
-                        filters.selectedTags.remove(tag)
-                    } else {
-                        filters.selectedTags.insert(tag)
-                    }
-                } label: {
-                    Text(tag.rawValue)
-                        .font(.system(size: 10, weight: .semibold))
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(isOn ? StudioTheme.Colors.accentSoft
-                                           : StudioTheme.Colors.surface1)
-                        )
-                        .foregroundStyle(isOn ? StudioTheme.Colors.textPrimary
-                                              : StudioTheme.Colors.textSecondary)
-                }
-                .buttonStyle(.plain)
+    private var tagsFilterChip: some View {
+        let count = filters.selectedTags.count
+        let baseLabel = "Tags"
+        let labelText: String = {
+            if count == 0 {
+                return baseLabel
+            } else {
+                return "\(baseLabel): \(count) selected"
             }
+        }()
+
+        let isActive = count > 0
+
+        return FilterChip(isActive: isActive, primary: false) {
+            withAnimation(.easeOut(duration: 0.18)) {
+                activePopover = (activePopover == .tags ? nil : .tags)
+            }
+        } label: {
+            Text(labelText)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .anchorPreference(key: FilterChipAnchorKey.self, value: .bounds) { anchor in
+            [.tags: anchor]
         }
     }
 
-    private var canonicalToggle: some View {
-        Button {
+    private var canonicalChip: some View {
+        let isOn = filters.canonicalOnly
+
+        return Button {
             filters.canonicalOnly.toggle()
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: filters.canonicalOnly ? "checkmark.seal.fill" : "checkmark.seal")
+                Image(systemName: isOn ? "checkmark.seal.fill" : "checkmark.seal")
                     .font(.system(size: 11, weight: .semibold))
                 Text("Canonical only")
                     .font(.system(size: 11, weight: .medium))
@@ -181,16 +206,25 @@ struct AtlasView: View {
             .padding(.vertical, 5)
             .background(
                 Capsule()
-                    .fill(filters.canonicalOnly
-                          ? StudioTheme.Colors.accentSoft
+                    .fill(isOn
+                          ? StudioTheme.Colors.accent   // badge-like: solid accent
                           : StudioTheme.Colors.surface1)
             )
-            .foregroundStyle(filters.canonicalOnly
-                             ? StudioTheme.Colors.textPrimary
+            .overlay(
+                Capsule()
+                    .stroke(isOn
+                            ? StudioTheme.Colors.accent
+                            : StudioTheme.Colors.borderSoft,
+                            lineWidth: 1)
+            )
+            .foregroundStyle(isOn
+                             ? Color.white        // badge: white text/icon on accent
                              : StudioTheme.Colors.textSecondary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ScalePressButtonStyle())
     }
+
+    // MARK: - Search field (slightly taller than chips)
 
     private var searchField: some View {
         HStack(spacing: 6) {
@@ -201,13 +235,40 @@ struct AtlasView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8) // a bit taller than filter chips
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(StudioTheme.Colors.surface1)
         )
     }
+
+    // MARK: - Popover content
+
+    @ViewBuilder
+    private func popover(for popover: AtlasPopover) -> some View {
+        switch popover {
+        case .project:
+            ProjectFilterPopover(
+                selectedProjectID: $filters.selectedProjectID,
+                projects: workspaceVM.store.allProjects,
+                onClose: { activePopover = nil }
+            )
+        case .kind:
+            KindFilterPopover(
+                selectedKind: $filters.kind,
+                onClose: { activePopover = nil }
+            )
+        case .tags:
+            TagsFilterPopover(
+                selectedTags: $filters.selectedTags,
+                allTags: VppTag.allCases,
+                onClose: { activePopover = nil }
+            )
+        }
+    }
+
+    // MARK: - Empty state
 
     private var emptyState: some View {
         VStack(spacing: 8) {
@@ -226,48 +287,64 @@ struct AtlasView: View {
         .padding()
     }
 
+    // MARK: - Filtering logic (unchanged)
+
     private var allBlocks: [Block] {
         workspaceVM.store.allBlocksSortedByUpdatedAtDescending()
     }
 
     private var filteredBlocks: [Block] {
         allBlocks.filter { block in
-            if let pid = filters.selectedProjectID,
-               workspaceVM.store.project(for: block)?.id != pid {
-                return false
-            }
-
-            if let kind = filters.kind,
-               block.kind != kind {
-                return false
-            }
-
-            if filters.canonicalOnly && !block.isCanonical {
-                return false
-            }
-
-            if !filters.selectedTags.isEmpty {
-                let hasTag = block.messages.contains { msg in
-                    filters.selectedTags.contains(msg.tag)
-                }
-                if !hasTag { return false }
-            }
-
-            let q = filters.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !q.isEmpty {
-                let haystack = (
-                    (block.title) + " " +
-                    (block.subtitle ?? "") + " " +
-                    (block.documentText ?? "") + " " +
-                    block.messages.map { $0.body }.joined(separator: " ")
-                ).lowercased()
-                if !haystack.contains(q.lowercased()) {
-                    return false
-                }
-            }
-
-            return true
+            matchesFilters(block)
         }
+    }
+
+    private func matchesFilters(_ block: Block) -> Bool {
+        // Project filter
+        if let pid = filters.selectedProjectID,
+           workspaceVM.store.project(for: block)?.id != pid {
+            return false
+        }
+
+        // Kind filter
+        if let kind = filters.kind,
+           block.kind != kind {
+            return false
+        }
+
+        // Canonical-only filter
+        if filters.canonicalOnly && !block.isCanonical {
+            return false
+        }
+
+        // Tag filter
+        if !filters.selectedTags.isEmpty {
+            let hasTag = block.messages.contains { msg in
+                filters.selectedTags.contains(msg.tag)
+            }
+            if !hasTag { return false }
+        }
+
+        // Search filter
+        let q = filters.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty {
+            let lowerQ = q.lowercased()
+
+            let textParts: [String] = [
+                block.title,
+                block.subtitle ?? "",
+                block.documentText ?? "",
+                block.messages.map { $0.body }.joined(separator: " ")
+            ]
+
+            let haystack = textParts.joined(separator: " ").lowercased()
+
+            if !haystack.contains(lowerQ) {
+                return false
+            }
+        }
+
+        return true
     }
 
     private var hasActiveFilters: Bool {
@@ -288,7 +365,7 @@ struct AtlasView: View {
 
     private var kindLabel: String {
         switch filters.kind {
-        case .none:            return "Any kind"
+        case .none:                return "Any kind"
         case .some(.conversation): return "Conversation"
         case .some(.document):     return "Document"
         case .some(.reference):    return "Reference"
@@ -302,5 +379,291 @@ struct AtlasView: View {
 
     private func sendToConsole(block: Block) {
         onSendToConsole?(block)
+    }
+}
+
+// MARK: - Popover shells
+
+private struct PopoverChrome<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            content
+        }
+        .padding(12)
+        // 1) Blur, clipped to rounded rect, at 50% opacity
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.thinMaterial)
+                .opacity(0.5)
+        )
+        // 2) Soft tint on top of the blur, same shape
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(AppTheme.Colors.surface1)
+        )
+        // 3) Hairline border
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
+        )
+        // 4) Force *everything* (blur, tint, content) to share the same corners
+        .clipShape(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        // 5) Softer, lighter shadow
+        .shadow(color: Color.black.opacity(0.08), radius: 10, x: 2, y: 6)
+    }
+}
+
+// MARK: - Project popover
+
+private struct ProjectFilterPopover: View {
+    @Binding var selectedProjectID: Project.ID?
+    let projects: [Project]
+    let onClose: () -> Void
+
+    var body: some View {
+        PopoverChrome {
+            HStack {
+                Text("Project")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(StudioTheme.Colors.textSecondary)
+                Spacer()
+                if selectedProjectID != nil {
+                    Button("Clear") {
+                        selectedProjectID = nil
+                        onClose()
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(StudioTheme.Colors.textSecondary)
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.bottom, 4)
+
+            Button {
+                selectedProjectID = nil
+                onClose()
+            } label: {
+                HStack {
+                    Text("All Projects")
+                    Spacer()
+                    if selectedProjectID == nil {
+                        Image(systemName: "checkmark")
+                    }
+                }
+                .font(.system(size: 12, weight: .regular))
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 4)
+
+            Divider()
+
+            ForEach(projects) { project in
+                let isSelected = (selectedProjectID == project.id)
+                Button {
+                    selectedProjectID = project.id
+                    onClose()
+                } label: {
+                    HStack {
+                        Text(project.name)
+                            .lineLimit(1)
+                        Spacer()
+                        if isSelected {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                    .font(.system(size: 12, weight: .regular))
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 4)
+            }
+        }
+    }
+}
+
+// MARK: - Kind popover
+
+private struct KindFilterPopover: View {
+    @Binding var selectedKind: BlockKind?
+    let onClose: () -> Void
+
+    var body: some View {
+        PopoverChrome {
+            HStack {
+                Text("Kind")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(StudioTheme.Colors.textSecondary)
+                Spacer()
+                if selectedKind != nil {
+                    Button("Clear") {
+                        selectedKind = nil
+                        onClose()
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(StudioTheme.Colors.textSecondary)
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.bottom, 4)
+
+            kindRow(label: "Any kind", kind: nil)
+            Divider()
+            kindRow(label: "Conversation", kind: .conversation)
+            kindRow(label: "Document", kind: .document)
+            kindRow(label: "Reference", kind: .reference)
+        }
+    }
+
+    @ViewBuilder
+    private func kindRow(label: String, kind: BlockKind?) -> some View {
+        let isSelected = (selectedKind == kind)
+        Button {
+            selectedKind = kind
+            onClose()
+        } label: {
+            HStack {
+                Text(label)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                }
+            }
+            .font(.system(size: 12, weight: .regular))
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Tags popover
+
+private struct TagsFilterPopover: View {
+    @Binding var selectedTags: Set<VppTag>
+    let allTags: [VppTag]
+    let onClose: () -> Void
+
+    var body: some View {
+        PopoverChrome {
+            HStack {
+                Text("Tags")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(StudioTheme.Colors.textSecondary)
+                Spacer()
+                if !selectedTags.isEmpty {
+                    Button("Clear") {
+                        selectedTags.removeAll()
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(StudioTheme.Colors.textSecondary)
+                    .buttonStyle(.plain)
+                }
+                Button("Done") {
+                    onClose()
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(StudioTheme.Colors.textSecondary)
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 4)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(allTags, id: \.self) { tag in
+                        tagRow(tag)
+                    }
+                }
+            }
+            .frame(maxHeight: 260) // keep it compact
+        }
+    }
+
+    @ViewBuilder
+    private func tagRow(_ tag: VppTag) -> some View {
+        let isOn = selectedTags.contains(tag)
+        Button {
+            if isOn {
+                selectedTags.remove(tag)
+            } else {
+                selectedTags.insert(tag)
+            }
+        } label: {
+            HStack {
+                Text(tag.rawValue)
+                    .font(.system(size: 12, weight: .regular))
+                Spacer()
+                if isOn {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(StudioTheme.Colors.accent)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isOn ? StudioTheme.Colors.accentSoft : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Shared chip styles
+
+private struct FilterChip<Label: View>: View {
+    let isActive: Bool
+    let primary: Bool
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                label()
+            }
+            .font(.system(size: 11, weight: .medium))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(isActive
+                          ? StudioTheme.Colors.accentSoft
+                          : StudioTheme.Colors.surface1)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(borderColor, lineWidth: primary ? (isActive ? 1.2 : 1) : 1)
+            )
+            .foregroundStyle(isActive
+                             ? StudioTheme.Colors.textPrimary
+                             : StudioTheme.Colors.textSecondary)
+            .scaleEffect(isHovering ? 1.02 : 1.0)
+        }
+        .buttonStyle(ScalePressButtonStyle())
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
+    }
+
+    private var borderColor: Color {
+        if primary {
+            return isActive ? StudioTheme.Colors.accent : StudioTheme.Colors.borderSoft
+        } else {
+            return isActive ? StudioTheme.Colors.accent : StudioTheme.Colors.borderSoft.opacity(0.9)
+        }
+    }
+}
+
+private struct ScalePressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }

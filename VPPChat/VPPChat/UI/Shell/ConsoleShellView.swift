@@ -13,16 +13,25 @@ struct ConsoleShellView: View {
                 SessionView(session: selected, appViewModel: appViewModel)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(
+                        ZStack {
+                         
+                            // Milky aerogel tint
+                            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                                .fill(AppTheme.Colors.surface1)
+
+                            // Soft border
+                            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                                .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                        }
+                    )
+                    // 🔑 Clip the ENTIRE panel (including SessionView content) to the same radius
+                    .clipShape(
                         RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                            .fill(AppTheme.Colors.surface0.opacity(0.9))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                                    .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                            )
                     )
             } else {
                 consolePlaceholder
             }
+
         }
     }
 
@@ -37,8 +46,15 @@ struct ConsoleShellView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                .fill(AppTheme.Colors.surface0.opacity(0.9))
+            ZStack {
+
+                RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                    .fill(AppTheme.Colors.surface1)
+            }
+            .clipShape(
+                RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+            )
         )
     }
+
 }

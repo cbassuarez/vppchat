@@ -23,12 +23,12 @@ struct ComposerView: View {
         .padding(AppTheme.Spacing.outerHorizontal)
         .background(
             RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                .fill(AppTheme.Colors.surface2)
+                .fill(AppTheme.Colors.surface0)
                 .overlay(
                     RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
                         .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(0.20), radius: 24, x: 0, y: 12)
+                .shadow(color: .black.opacity(0.20), radius: 6, x: 6, y: 6)
         )
         .animation(.spring(response: AppTheme.Motion.medium,
                            dampingFraction: 0.85,
@@ -63,7 +63,7 @@ struct ComposerView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(AppTheme.Colors.surface1.opacity(0.9))
+                    .background(AppTheme.Colors.surface0)
                     .clipShape(Capsule())
                 }
 
@@ -102,7 +102,7 @@ struct ComposerView: View {
                     .font(.system(size: 12))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(AppTheme.Colors.surface1.opacity(0.9))
+                    .background(AppTheme.Colors.surface0)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .foregroundStyle(AppTheme.Colors.textPrimary)
 
@@ -133,7 +133,7 @@ struct ComposerView: View {
     // Middle: TextEditor card
     private var editorBand: some View {
         RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-            .fill(AppTheme.Colors.surface1)
+            .fill(AppTheme.Colors.surface0)
             .overlay(
                 RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
                     .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
@@ -177,7 +177,7 @@ struct ComposerView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(AppTheme.Colors.surface1.opacity(0.9))
+                .background(AppTheme.Colors.surface0)
                 .clipShape(Capsule())
                 .foregroundStyle(AppTheme.Colors.textSecondary)
             }
@@ -279,11 +279,11 @@ struct ComposerView: View {
                 .background(
                     Capsule()
                         .fill(isSelected ? theme.structuralAccent.opacity(0.22)
-                                         : AppTheme.Colors.surface1.opacity(0.9))
+                                         : AppTheme.Colors.surface0)
                 )
                 .overlay(
                     Capsule()
-                        .stroke(isSelected ? theme.structuralAccent.opacity(0.9)
+                        .stroke(isSelected ? theme.structuralAccent
                                            : AppTheme.Colors.borderSoft,
                                 lineWidth: isSelected ? 1.3 : 1)
                 )
@@ -301,11 +301,11 @@ struct ComposerView: View {
                 .background(
                     Capsule()
                         .fill(isSelected ? theme.structuralAccent.opacity(0.22)
-                                         : AppTheme.Colors.surface1.opacity(0.9))
+                                         : AppTheme.Colors.surface0)
                 )
                 .overlay(
                     Capsule()
-                        .stroke(isSelected ? theme.structuralAccent.opacity(0.9)
+                        .stroke(isSelected ? theme.structuralAccent
                                            : AppTheme.Colors.borderSoft,
                                 lineWidth: isSelected ? 1.3 : 1)
                 )
@@ -329,14 +329,14 @@ struct ComposerView: View {
                 .padding(.vertical, 4)
                 .background(
                     Capsule()
-                        .fill(selected ? color : AppTheme.Colors.surface1.opacity(0.7))
+                        .fill(selected ? color : AppTheme.Colors.surface0.opacity(0.7))
                 )
                 .overlay(
                     Capsule()
                         .stroke(
                             selected ? (color == .clear
-                                        ? theme.structuralAccent.opacity(0.9)
-                                        : color.opacity(0.9))
+                                        ? theme.structuralAccent
+                                        : color)
                                      : AppTheme.Colors.borderSoft,
                             lineWidth: selected ? 1.4 : 1
                         )
@@ -362,15 +362,15 @@ struct ComposerView: View {
                     Capsule()
                         .fill(
                             selected
-                            ? (color ?? AppTheme.Colors.surface1).opacity(color != nil ? 0.18 : 0.9)
-                            : AppTheme.Colors.surface1.opacity(0.7)
+                            ? (color ?? AppTheme.Colors.surface0).opacity(color != nil ? 0.18 : 0.9)
+                            : AppTheme.Colors.surface0.opacity(0.7)
                         )
                 )
                 .overlay(
                     Capsule()
                         .stroke(
                             selected
-                            ? (color ?? theme.structuralAccent).opacity(0.9)
+                            ? (color ?? theme.structuralAccent)
                             : AppTheme.Colors.borderSoft,
                             lineWidth: selected ? 1.4 : 1
                         )

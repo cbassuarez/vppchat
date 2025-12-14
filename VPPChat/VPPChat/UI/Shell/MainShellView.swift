@@ -10,10 +10,7 @@ struct MainShellView: View {
     @Namespace private var modeUnderline
 
     var body: some View {
-        _ = theme.palette
         ZStack {
-            NoiseBackground()
-
             VStack(spacing: 0) {
                 MainToolbar(mode: $mode)
                     .padding(.horizontal, 18)
@@ -32,7 +29,8 @@ struct MainShellView: View {
                         AtlasView(
                             onOpenInStudio: { block in
                                 workspaceVM.select(block: block)
-                                withAnimation(.spring(response: AppTheme.Motion.medium, dampingFraction: 0.85)) {
+                                withAnimation(.spring(response: AppTheme.Motion.medium,
+                                                      dampingFraction: 0.85)) {
                                     mode = .studio
                                 }
                             },
@@ -46,12 +44,24 @@ struct MainShellView: View {
                 .padding(18)
             }
         }
+        .background(Color.clear)
     }
 
     private func sendToConsole(_ block: Block) {
-        let folder = appVM.selectedFolder ?? appVM.store.folders.first
-        let session = appVM.createNewSession(in: folder)
+        // Decide which folder to put the new session in
+        guard let folder = appVM.selectedFolder ?? appVM.store.folders.first else {
+            return
+        }
 
+        // Create a new session; AppViewModel is responsible for updating selectedSessionID
+        appVM.createNewSession(in: folder)
+
+        // Grab the ID of the newly selected session
+        guard let sessionID = appVM.selectedSessionID else {
+            return
+        }
+
+        // Build snippet from the block
         let snippet: String
         if let text = block.documentText, !text.isEmpty {
             snippet = text
@@ -77,8 +87,7 @@ struct MainShellView: View {
             validationIssues: []
         )
 
-        appVM.store.appendMessage(message, to: session.id)
-        appVM.selectedSessionID = session.id
+        appVM.store.appendMessage(message, to: sessionID)
 
         withAnimation(.spring(response: AppTheme.Motion.medium, dampingFraction: 0.85)) {
             mode = .console

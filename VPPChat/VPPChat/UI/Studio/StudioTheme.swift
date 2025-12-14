@@ -5,10 +5,10 @@ struct StudioTheme {
     struct Colors {
         // Light neutrals
         static let background = Color(red: 0.96, green: 0.97, blue: 0.99)
-        static let surface1   = Color.white.opacity(0.9)
-        static let surface2   = Color.white.opacity(0.8)
+        static let surface2   = Color.white
+        static let surface1   = Color.white.opacity(0.8)
 
-        static let panel = Color.white.opacity(0.9)
+        static let panel = Color.white
 
         static let textPrimary   = Color(red: 0.08, green: 0.10, blue: 0.16)
         static let textSecondary = Color(red: 0.35, green: 0.38, blue: 0.47)

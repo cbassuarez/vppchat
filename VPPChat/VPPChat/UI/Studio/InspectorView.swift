@@ -15,7 +15,7 @@ struct InspectorView: View {
         }
         .padding(12)
         .background(
-            .ultraThinMaterial,
+            AppTheme.Colors.surface2,
             in: RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
         )
     }

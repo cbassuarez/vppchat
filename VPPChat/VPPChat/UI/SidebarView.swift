@@ -4,89 +4,80 @@ struct SidebarView: View {
     @EnvironmentObject private var appViewModel: AppViewModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Search / header could go here later
-            List(selection: $appViewModel.selectedSessionID) {
-                // Pinned section
-                Section("Pinned") {
-                    ForEach(pinnedFolders()) { folder in
-                        folderRow(folder: folder)
-                    }
-                    ForEach(pinnedSessions()) { session in
-                        sessionRow(session: session, isOrphanPinned: true)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            // Small header
+            HStack {
+                Text("Sessions")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                Spacer()
+            }
 
+            // Glassy list
+            List(selection: $appViewModel.selectedSessionID) {
                 Section("Folders") {
                     ForEach(sortedFolders()) { folder in
-                        folderRow(folder: folder)
-                    }
+                        DisclosureGroup {
+                            ForEach(sessions(in: folder)) { session in
+                                Text(session.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                                    .tag(session.id as Session.ID?)
+                                    .contextMenu {
+                                        Button(session.isPinned ? "Unpin" : "Pin") {
+                                            appViewModel.store.togglePin(session: session)
+                                        }
+                                    }
+                            }
 
-                    Button(action: { appViewModel.createNewFolder(named: "Folder \(appViewModel.store.folders.count + 1)") }) {
-                        Label("Add Folder", systemImage: "folder.badge.plus")
+                            Button(action: { appViewModel.createNewSession(in: folder) }) {
+                                Label("New Session", systemImage: "plus")
+                                    .font(.system(size: 11, weight: .regular))
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(folder.name)
+                                    .font(.system(size: 12, weight: .semibold))
+                                if folder.isPinned {
+                                    Image(systemName: "pin.fill")
+                                        .font(.system(size: 11, weight: .regular))
+                                        .foregroundStyle(AppTheme.Colors.textSubtle)
+                                }
+                            }
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                            .tag(folder.id as Folder.ID?)
+                            .contextMenu {
+                                Button(folder.isPinned ? "Unpin" : "Pin") {
+                                    appViewModel.store.togglePin(folder: folder)
+                                }
+                            }
+                        }
                     }
                 }
+
+                Button(action: {
+                    appViewModel.createNewFolder(
+                        named: "Folder \(appViewModel.store.folders.count + 1)"
+                    )
+                }) {
+                    Label("Add Folder", systemImage: "folder.badge.plus")
+                        .font(.system(size: 12, weight: .medium))
+                }
             }
-            .listStyle(.sidebar)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(AppTheme.Colors.surface2)
         }
+        .padding(12)
         .background(
-            AppTheme.Colors.surface0
-                .background(.ultraThinMaterial)
-                .ignoresSafeArea()
+            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                .fill(AppTheme.Colors.surface2)
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                        .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.10), radius: 6, x: 6, y: 6)
         )
-    }
-
-    private func folderRow(folder: Folder) -> some View {
-        DisclosureGroup {
-            ForEach(sessions(in: folder)) { session in
-                sessionRow(session: session)
-            }
-            Button(action: { appViewModel.createNewSession(in: folder) }) {
-                Label("New Session", systemImage: "plus")
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "folder")
-                Text(folder.name)
-                    .font(.system(size: 13, weight: .medium))
-                if folder.isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                }
-            }
-            .contextMenu {
-                Button(folder.isPinned ? "Unpin" : "Pin") {
-                    appViewModel.store.togglePin(folder: folder)
-                }
-            }
-        }
-    }
-
-    private func sessionRow(session: Session, isOrphanPinned: Bool = false) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 12))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(session.name)
-                    .font(.system(size: 12, weight: .regular))
-                Text(session.updatedAt, style: .time)
-                    .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-            }
-            if session.isPinned || isOrphanPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-            }
-        }
-        .padding(.leading, 12) // visual indentation
-        .tag(session.id as Session.ID?)
-        .contextMenu {
-            Button(session.isPinned ? "Unpin" : "Pin") {
-                appViewModel.store.togglePin(session: session)
-            }
-        }
     }
 
     private func sortedFolders() -> [Folder] {
@@ -96,18 +87,11 @@ struct SidebarView: View {
         }
     }
 
-    private func pinnedFolders() -> [Folder] {
-        appViewModel.store.folders.filter { $0.isPinned }
-    }
-
-    private func pinnedSessions() -> [Session] {
-        appViewModel.store.sessions.filter { $0.isPinned && appViewModel.store.folder(for: $0.id) == nil }
-    }
-
     private func sessions(in folder: Folder) -> [Session] {
         appViewModel.store.sessions.filter { $0.folderID == folder.id }
     }
 }
+
 
 #Preview {
     SidebarView()

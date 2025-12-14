@@ -29,24 +29,7 @@ struct MainToolbar: View {
 
             Spacer()
 
-            HStack(spacing: 8) {
-                if mode == .studio || mode == .atlas {
-                    paletteMenu
-                }
 
-                Button {
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 12, weight: .semibold))
-                        .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
-                                .fill(AppTheme.Colors.surface1.opacity(0.9))
-                        )
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                }
-                .buttonStyle(.plain)
-            }
         }
     }
 
@@ -72,7 +55,7 @@ struct MainToolbar: View {
             .background(
                 RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
                     .fill(isActive ? AppTheme.Colors.structuralAccent.opacity(0.22)
-                                   : AppTheme.Colors.surface1.opacity(0.6))
+                                   : AppTheme.Colors.surface2.opacity(0.6))
             )
             .overlay(alignment: .bottom) {
                 if isActive {
@@ -87,49 +70,6 @@ struct MainToolbar: View {
             .foregroundStyle(isActive ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
         }
         .buttonStyle(.plain)
-    }
-
-    private var paletteMenu: some View {
-        Menu {
-            ForEach(AccentPalette.allCases, id: \.self) { palette in
-                Button {
-                    themeManager.palette = palette
-                } label: {
-                    HStack(spacing: 8) {
-                        HStack(spacing: 2) {
-                            Circle()
-                                .fill(palette.structural)
-                                .frame(width: 8, height: 8)
-                            Circle()
-                                .fill(palette.exception)
-                                .frame(width: 8, height: 8)
-                            Circle()
-                                .fill(AppTheme.Colors.surface2)
-                                .frame(width: 8, height: 8)
-                        }
-                        Text(palette.rawValue.capitalized)
-                        if palette == themeManager.palette {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "paintpalette")
-                Text("Theme")
-                    .font(.system(size: 11, weight: .semibold))
-            }
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
-                    .fill(AppTheme.Colors.surface1.opacity(0.9))
-            )
-            .foregroundStyle(AppTheme.Colors.textSecondary)
-        }
     }
 
     private var currentModeLabel: String {

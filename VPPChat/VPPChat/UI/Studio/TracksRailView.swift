@@ -23,12 +23,18 @@ struct TracksRailView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
-                .fill(.thinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
-                        .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
-                )
+            ZStack {
+               
+
+                RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
+                    .fill(AppTheme.Colors.surface1)
+
+                RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
+                    .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
+            }
+            .clipShape(
+                RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
+            )
         )
     }
 
@@ -46,8 +52,15 @@ struct TracksRailView: View {
         }
         .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
-                .fill(StudioTheme.Colors.panel)
+            ZStack {
+               
+
+                RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
+                    .fill(AppTheme.Colors.surface1)
+            }
+            .clipShape(
+                RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
+            )
         )
     }
 

@@ -59,16 +59,22 @@ struct BlockCardView: View {
             }
         }
         .padding(14)
+        
         .background(
             RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
-                .fill(.thinMaterial)
+                .fill(AppTheme.Colors.surface2)
                 .overlay(
                     RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
                         .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
+                    
                 )
+            
         )
-        .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 12)
+        .shadow(color: .black.opacity(0.09), radius: 6, x: 6, y: 6)
+        .padding(14)
+
     }
+
 
     private func chip(_ label: String) -> some View {
         Text(label)
@@ -78,8 +84,9 @@ struct BlockCardView: View {
             .padding(.vertical, 4)
             .background(
                 Capsule()
-                    .fill(StudioTheme.Colors.panel.opacity(0.9))
+                    .fill(StudioTheme.Colors.panel)
             )
             .foregroundStyle(StudioTheme.Colors.textSecondary)
+        
     }
 }

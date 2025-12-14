@@ -24,10 +24,22 @@ struct CommandSpaceView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+                .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.thinMaterial)
+                        .fill(AppTheme.Colors.surface0)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(StudioTheme.Colors.borderSoft.opacity(0.7), lineWidth: 0.5)
+                )
+                .clipShape(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                 )
                 .foregroundStyle(StudioTheme.Colors.textPrimary)
+
 
             Text("Suggestions coming soon")
                 .font(.system(size: 11))
@@ -35,13 +47,22 @@ struct CommandSpaceView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
-                )
+            // Blur at 0.5 opacity, clipped to the rounded rect
+            .thinMaterial.opacity(0.35),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
         )
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(AppTheme.Colors.surface2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
+        )
+        .clipShape(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .shadow(color: .black.opacity(0.09), radius: 6, x: 6, y: 6)
         .padding()
     }
 }
