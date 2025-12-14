@@ -17,7 +17,13 @@ final class ConsoleViewModel: ObservableObject {
         get { session.messages }
         set { session.messages = newValue }
     }
+    private var hasPendingAssistant: Bool {
+           messages.contains { $0.role == .assistant && $0.state.isPending }
+       }
 
+       private var lastUserMessage: ConsoleMessage? {
+           messages.last { $0.role == .user }
+       }
     // 🔹 Sprint 2 – expose LLM config
 
     var modelID: String {
@@ -54,7 +60,7 @@ final class ConsoleViewModel: ObservableObject {
 
     func beginAssistantPlaceholder(modelLabel: String) {
         // Do not create multiple pending assistant messages.
-        guard !session.hasPendingAssistant else { return }
+        guard !hasPendingAssistant else { return }
 
         let placeholder = ConsoleMessage(
             role: .assistant,
@@ -106,7 +112,7 @@ final class ConsoleViewModel: ObservableObject {
 
     /// Retry by replaying the last user message, if available.
     func retryLastUser(sendHandler: (String) -> Void) {
-        guard let lastUser = session.lastUserMessage else { return }
+        guard let lastUser = lastUserMessage else { return }
         sendHandler(lastUser.text)
     }
 }
