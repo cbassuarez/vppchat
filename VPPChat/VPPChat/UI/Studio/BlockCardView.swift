@@ -2,11 +2,16 @@ import SwiftUI
 
 struct BlockCardView: View {
     let block: Block
+    var isSelected: Bool = false
 
     @EnvironmentObject private var workspace: WorkspaceViewModel
     @Environment(\.shellModeBinding) private var shellModeBinding
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering: Bool = false
 
     var body: some View {
+        let hoverScale: CGFloat = isHovering ? 1.02 : 1.0
+
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(block.title)
@@ -62,20 +67,31 @@ struct BlockCardView: View {
             }
         }
         .padding(14)
-        
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
                 .fill(AppTheme.Colors.surface2)
                 .overlay(
                     RoundedRectangle(cornerRadius: StudioTheme.Radii.card, style: .continuous)
-                        .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
-                    
-                )
-            
-        )
-        .shadow(color: .black.opacity(0.09), radius: 6, x: 6, y: 6)
-        .padding(14)
+                        .stroke(borderColor, lineWidth: isHovering || isSelected ? 1.4 : 1)
 
+                )
+
+        )
+        .shadow(
+            color: Color.black.opacity(isHovering || isSelected ? 0.18 : 0.10),
+            radius: isHovering || isSelected ? 10 : 6,
+            x: 0,
+            y: isHovering || isSelected ? 8 : 6
+        )
+        .scaleEffect(hoverScale)
+        .animation(
+            reduceMotion ? .none : .spring(response: 0.22, dampingFraction: 0.85),
+            value: isHovering
+        )
+        .onHover { hovering in
+            isHovering = hovering
+        }
         .contextMenu {
             Button("Open in Console") {
                 openInConsole()
@@ -97,6 +113,13 @@ struct BlockCardView: View {
             )
             .foregroundStyle(StudioTheme.Colors.textSecondary)
 
+    }
+
+    private var borderColor: Color {
+        if isSelected {
+            return StudioTheme.Colors.accent.opacity(0.75)
+        }
+        return isHovering ? StudioTheme.Colors.accent.opacity(0.7) : StudioTheme.Colors.borderSoft
     }
 
     private func openInConsole() {

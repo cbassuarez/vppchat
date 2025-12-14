@@ -1,6 +1,9 @@
 import Foundation
 import Combine
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 // AppViewModel coordinates global app state, selection, and shared services.
 final class AppViewModel: ObservableObject {
@@ -60,6 +63,12 @@ final class AppViewModel: ObservableObject {
     func createNewFolder(named name: String) {
         let folder = store.createFolder(name: name)
         selectedFolderID = folder.id
+    }
+
+    func showSettings() {
+#if os(macOS)
+        NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+#endif
     }
 }
 

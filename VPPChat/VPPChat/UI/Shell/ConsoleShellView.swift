@@ -24,17 +24,7 @@ struct ConsoleShellView: View {
                     .padding(.leading, 12)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    ZStack {
-                        RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                            .fill(AppTheme.Colors.surface1)
-                        RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                            .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                    }
-                )
-                .clipShape(
-                    RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                )
+                .panelBackground()
             } else {
                 consolePlaceholder
             }
@@ -65,16 +55,7 @@ struct ConsoleShellView: View {
                 .foregroundStyle(AppTheme.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            ZStack {
-
-                RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                    .fill(AppTheme.Colors.surface1)
-            }
-            .clipShape(
-                RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-            )
-        )
+        .panelBackground()
     }
 
 }
@@ -117,15 +98,7 @@ private struct ConsoleSessionSidebar: View {
             .background(AppTheme.Colors.surface2)
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                .fill(AppTheme.Colors.surface2)
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                        .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.10), radius: 6, x: 6, y: 6)
-        )
+        .panelBackground()
     }
 }
 
@@ -133,6 +106,8 @@ private struct ConsoleSessionSidebar: View {
 
 private struct ConsoleSessionView: View {
     @EnvironmentObject private var workspace: WorkspaceViewModel
+    @FocusState private var composerFocused: Bool
+    @State private var lastComposerFocusToken: Int = 0
     @State private var draftText: String = ""
     @State private var modifiers: VppModifiers = VppModifiers()
     @State private var sources: VppSources = .none
@@ -160,13 +135,19 @@ private struct ConsoleSessionView: View {
                 sendAction: handleSend,
                 tagSelection: { workspace.vppRuntime.setTag($0) },
                 stepCycle: { workspace.vppRuntime.nextInCycle() },
-                resetCycle: { workspace.vppRuntime.newCycle() }
+                resetCycle: { workspace.vppRuntime.newCycle() },
+                focusBinding: $composerFocused
             )
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
         }
         .navigationTitle(session.title)
         .background(NoiseBackground())
+        .onReceive(workspace.$focusConsoleComposerToken) { token in
+            guard token != lastComposerFocusToken else { return }
+            lastComposerFocusToken = token
+            composerFocused = true
+        }
     }
 
     private func handleSend() {

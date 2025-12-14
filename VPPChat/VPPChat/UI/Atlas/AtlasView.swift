@@ -26,6 +26,7 @@ struct AtlasView: View {
     @EnvironmentObject private var workspaceVM: WorkspaceViewModel
     @Environment(\.shellModeBinding) private var shellModeBinding
     @StateObject private var filters = AtlasFilterState()
+    @State private var selectedIndex: Int = 0
 
     // Which dropdown is currently open
     @State private var activePopover: AtlasPopover? = nil
@@ -35,33 +36,7 @@ struct AtlasView: View {
             VStack(spacing: 12) {
                 filtersBand
 
-                if filteredBlocks.isEmpty {
-                    emptyState
-                } else {
-                    ScrollView {
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 260), spacing: 16)],
-                            spacing: 16
-                        ) {
-                            ForEach(filteredBlocks) { block in
-                                BlockCardView(block: block)
-                                    .contextMenu {
-                                        Button("Open in Studio") {
-                                            openInStudio(block: block)
-                                        }
-                                        Button("Send to Console") {
-                                            sendToConsole(block: block)
-                                        }
-                                    }
-                                    .onTapGesture(count: 2) {
-                                        openInStudio(block: block)
-                                    }
-                            }
-                            .padding(.bottom, 8)
-                        }
-                        .padding(.vertical, 8)
-                    }
-                }
+                atlasContent
             }
             .padding(12)
             .background(
@@ -75,6 +50,10 @@ struct AtlasView: View {
                         )
                 }
             )
+            .onChange(of: visibleBlocks) { blocks in
+                let newIndex = max(0, min(selectedIndex, max(blocks.count - 1, 0)))
+                selectedIndex = newIndex
+            }
         }
         // Toolbar-style popovers, anchored to each chip via preferences + geometry
         .overlayPreferenceValue(FilterChipAnchorKey.self) { anchors in
@@ -94,12 +73,33 @@ struct AtlasView: View {
                                     y: rect.maxY + 8)
                     }
                 }
-                .frame(maxWidth: .infinity,
-                       maxHeight: .infinity,
-                       alignment: .topLeading)
+                       .frame(maxWidth: .infinity,
+                      maxHeight: .infinity,
+                      alignment: .topLeading)
             }
         }
-
+#if os(macOS)
+        .onKeyPress(.upArrow) { _ in
+            moveSelection(delta: -1)
+            return .handled
+        }
+        .onKeyPress(.downArrow) { _ in
+            moveSelection(delta: 1)
+            return .handled
+        }
+        .onKeyPress(.leftArrow) { _ in
+            moveSelection(delta: -1)
+            return .handled
+        }
+        .onKeyPress(.rightArrow) { _ in
+            moveSelection(delta: 1)
+            return .handled
+        }
+        .onKeyPress(.return) { _ in
+            openSelectedBlock()
+            return .handled
+        }
+#endif
     }
 
     // MARK: - Filters band (toolbar)
@@ -110,6 +110,25 @@ struct AtlasView: View {
             kindFilterChip
             tagsFilterChip
             canonicalChip
+
+            if filters.hasActiveFilters {
+                Button {
+                    filters.reset()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Reset filters")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(AppTheme.Colors.surface0)
+                    .clipShape(Capsule())
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
 
             Spacer()
 
@@ -269,23 +288,106 @@ struct AtlasView: View {
         }
     }
 
-    // MARK: - Empty state
+    // MARK: - Content & empty states
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Text("No blocks match these filters.")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(StudioTheme.Colors.textPrimary)
-            Text("Try clearing the search field, tags, or Canonical-only filter.")
-                .font(.system(size: 12))
-                .foregroundStyle(StudioTheme.Colors.textSecondary)
-            Button("Reset filters") {
-                resetFilters()
+    @ViewBuilder
+    private var atlasContent: some View {
+        if visibleBlocks.isEmpty {
+            if allBlocks.isEmpty {
+                onboardingEmptyState
+            } else {
+                filteredEmptyState
             }
-            .font(.system(size: 12, weight: .semibold))
+        } else {
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 260), spacing: 16)],
+                    spacing: 16
+                ) {
+                    ForEach(Array(visibleBlocks.enumerated()), id: \.1.id) { index, block in
+                        BlockCardView(block: block, isSelected: index == selectedIndex)
+                            .contextMenu {
+                                Button("Open in Studio") {
+                                    openInStudio(block: block)
+                                }
+                                Button("Send to Console") {
+                                    sendToConsole(block: block)
+                                }
+                            }
+                            .onTapGesture {
+                                selectedIndex = index
+                            }
+                            .onTapGesture(count: 2) {
+                                selectedIndex = index
+                                openBlock(block)
+                            }
+                    }
+                    .padding(.bottom, 8)
+                }
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private var onboardingEmptyState: some View {
+        VStack(spacing: 6) {
+            Text("You haven’t saved any blocks yet.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(StudioTheme.Colors.textPrimary)
+
+            Text("Create a block in Studio or Console to see it here.")
+                .font(.system(size: 11))
+                .foregroundStyle(StudioTheme.Colors.textSecondary)
+
+            HStack(spacing: 8) {
+                Button("Open Studio") {
+                    shellModeBinding?.wrappedValue = .studio
+                }
+                .buttonStyle(PrimaryCapsuleButton())
+
+                Button("Open Console") {
+                    shellModeBinding?.wrappedValue = .console
+                }
+                .buttonStyle(SecondaryCapsuleButton())
+            }
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+        .background(
+            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                .fill(AppTheme.Colors.surface0)
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                        .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                )
+        )
+    }
+
+    private var filteredEmptyState: some View {
+        VStack(spacing: 6) {
+            Text("No blocks match these filters.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(StudioTheme.Colors.textPrimary)
+
+            Button {
+                filters.reset()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Reset filters")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(AppTheme.Colors.surface0)
+                .clipShape(Capsule())
+                .foregroundStyle(AppTheme.Colors.textSecondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Filtering logic (unchanged)
@@ -299,6 +401,8 @@ struct AtlasView: View {
             matchesFilters(block)
         }
     }
+
+    private var visibleBlocks: [Block] { filteredBlocks }
 
     private func matchesFilters(_ block: Block) -> Bool {
         // Project filter
@@ -348,22 +452,6 @@ struct AtlasView: View {
         return true
     }
 
-    private var hasActiveFilters: Bool {
-        filters.selectedProjectID != nil ||
-        filters.kind != nil ||
-        !filters.selectedTags.isEmpty ||
-        filters.canonicalOnly ||
-        !filters.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func resetFilters() {
-        filters.selectedProjectID = nil
-        filters.kind = nil
-        filters.selectedTags.removeAll()
-        filters.canonicalOnly = false
-        filters.searchText = ""
-    }
-
     private var kindLabel: String {
         switch filters.kind {
         case .none:                return "Any kind"
@@ -376,6 +464,21 @@ struct AtlasView: View {
     private func openInStudio(block: Block) {
         workspaceVM.select(block: block)
         onOpenInStudio?(block)
+    }
+
+    private func openBlock(_ block: Block) {
+        openInStudio(block: block)
+    }
+
+    private func openSelectedBlock() {
+        guard visibleBlocks.indices.contains(selectedIndex) else { return }
+        openBlock(visibleBlocks[selectedIndex])
+    }
+
+    private func moveSelection(delta: Int) {
+        guard !visibleBlocks.isEmpty else { return }
+        let newIndex = max(0, min(selectedIndex + delta, visibleBlocks.count - 1))
+        selectedIndex = newIndex
     }
 
     private func sendToConsole(block: Block) {
@@ -665,6 +768,38 @@ private struct FilterChip<Label: View>: View {
         } else {
             return isActive ? StudioTheme.Colors.accent : StudioTheme.Colors.borderSoft.opacity(0.9)
         }
+    }
+}
+
+private struct PrimaryCapsuleButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Capsule().fill(StudioTheme.Colors.accent))
+            .overlay(
+                Capsule()
+                    .stroke(StudioTheme.Colors.accent, lineWidth: 1.1)
+            )
+            .foregroundStyle(Color.white)
+            .opacity(configuration.isPressed ? 0.9 : 1.0)
+    }
+}
+
+private struct SecondaryCapsuleButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Capsule().fill(AppTheme.Colors.surface0))
+            .overlay(
+                Capsule()
+                    .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
+            )
+            .foregroundStyle(StudioTheme.Colors.textSecondary)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
     }
 }
 

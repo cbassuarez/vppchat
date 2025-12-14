@@ -34,6 +34,7 @@ final class WorkspaceViewModel: ObservableObject {
     }
 
     @Published var isCommandSpaceVisible: Bool = false
+    @Published var focusConsoleComposerToken: Int = 0
     @Published var vppRuntime: VppRuntime
 
     private var cancellables: Set<AnyCancellable> = []
@@ -211,6 +212,42 @@ final class WorkspaceViewModel: ObservableObject {
         selectedSceneID = scene.id
     }
 
+    func selectNextScene() {
+        guard let trackID = selectedTrackID,
+              let track = store.track(id: trackID) else { return }
+
+        let current = selectedSceneID ?? track.scenes.first
+        guard
+            let currentSceneID = current,
+            let currentIndex = track.scenes.firstIndex(of: currentSceneID)
+        else { return }
+
+        guard currentIndex < track.scenes.index(before: track.scenes.endIndex) else { return }
+
+        let nextIndex = track.scenes.index(after: currentIndex)
+        guard let nextScene = store.scene(id: track.scenes[nextIndex]) else { return }
+
+        select(scene: nextScene)
+    }
+
+    func selectPreviousScene() {
+        guard let trackID = selectedTrackID,
+              let track = store.track(id: trackID) else { return }
+
+        let current = selectedSceneID ?? track.scenes.first
+        guard
+            let currentSceneID = current,
+            let currentIndex = track.scenes.firstIndex(of: currentSceneID)
+        else { return }
+
+        guard currentIndex > track.scenes.startIndex else { return }
+
+        let previousIndex = track.scenes.index(before: currentIndex)
+        guard let previousScene = store.scene(id: track.scenes[previousIndex]) else { return }
+
+        select(scene: previousScene)
+    }
+
     func select(block: Block) {
         guard let scene = store.scene(id: block.sceneID),
               let track = store.track(id: scene.trackID),
@@ -240,6 +277,10 @@ extension WorkspaceViewModel {
     func goToAtlas() {
         currentShellMode = .atlas
         switchToShell?(.atlas)
+    }
+
+    func focusConsoleComposer() {
+        focusConsoleComposerToken &+= 1
     }
 
     func commandSpaceItems(for query: String) -> [CommandSpaceItem] {

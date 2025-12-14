@@ -105,7 +105,7 @@ struct VPPChatApp: App {
                 // 🔴 Single global dim + Command Space overlay
                 if workspaceViewModel.isCommandSpaceVisible {
                     Color.black
-                        .opacity(0.22)
+                        .opacity(AppTheme.Motion.commandSpaceDimOpacity)
                         .ignoresSafeArea()
                         .transition(.opacity)
                         .allowsHitTesting(false)
@@ -149,7 +149,17 @@ struct VPPChatApp: App {
 
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
-        
+
+#if os(macOS)
+        .commands {
+            AppCommands(
+                shellMode: $shellMode,
+                workspaceViewModel: workspaceViewModel,
+                appViewModel: appViewModel
+            )
+        }
+#endif
+
         Settings {
             SettingsRoot()
                 .windowResizeAnchorCompat(.trailing)

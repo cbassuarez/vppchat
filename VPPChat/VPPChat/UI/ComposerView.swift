@@ -11,6 +11,7 @@ struct ComposerView: View {
     var tagSelection: (VppTag) -> Void
     var stepCycle: () -> Void
     var resetCycle: () -> Void
+    var focusBinding: FocusState<Bool>.Binding? = nil
 
     @State private var isQualityExpanded = false
     @EnvironmentObject private var theme: ThemeManager
@@ -42,15 +43,7 @@ struct ComposerView: View {
             actionBand
         }
         .padding(AppTheme.Spacing.outerHorizontal)
-        .background(
-            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                .fill(AppTheme.Colors.surface0)
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                        .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.20), radius: 6, x: 6, y: 6)
-        )
+        .panelBackground()
         .animation(
             .spring(response: AppTheme.Motion.medium,
                     dampingFraction: 0.85,
@@ -172,6 +165,7 @@ struct ComposerView: View {
                     .foregroundStyle(AppTheme.Colors.textPrimary)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
+                    .focused(focusBinding)
                     .padding(.horizontal, AppTheme.Spacing.cardInner)
                     .padding(.vertical, AppTheme.Spacing.base * 1.2)
             )
