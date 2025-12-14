@@ -37,6 +37,7 @@ struct SessionView: View {
     var body: some View {
         VStack(spacing: 0) {
             MessageListView(
+                sessionID: session.id,
                 messages: consoleViewModel.messages,
                 onRetry: retryLastUser
             )

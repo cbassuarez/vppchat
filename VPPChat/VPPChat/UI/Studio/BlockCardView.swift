@@ -3,6 +3,9 @@ import SwiftUI
 struct BlockCardView: View {
     let block: Block
 
+    @EnvironmentObject private var workspace: WorkspaceViewModel
+    @Environment(\.shellModeBinding) private var shellModeBinding
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -73,6 +76,12 @@ struct BlockCardView: View {
         .shadow(color: .black.opacity(0.09), radius: 6, x: 6, y: 6)
         .padding(14)
 
+        .contextMenu {
+            Button("Open in Console") {
+                openInConsole()
+            }
+        }
+
     }
 
 
@@ -87,6 +96,18 @@ struct BlockCardView: View {
                     .fill(StudioTheme.Colors.panel)
             )
             .foregroundStyle(StudioTheme.Colors.textSecondary)
-        
+
+    }
+
+    private func openInConsole() {
+        guard
+            let scene = workspace.store.scene(id: block.sceneID),
+            let track = workspace.store.track(id: scene.trackID),
+            let project = workspace.store.project(id: track.projectID)
+        else { return }
+
+        let session = workspace.openConsole(for: block, project: project, track: track, scene: scene)
+        workspace.touchConsoleSession(session.id)
+        shellModeBinding?.wrappedValue = .console
     }
 }
