@@ -26,3 +26,22 @@ struct ShellModeCommands: Commands {
         }
     }
 }
+
+struct WorkspaceCommands: Commands {
+    @ObservedObject var workspaceViewModel: WorkspaceViewModel
+
+    var body: some Commands {
+        CommandMenu("Command Space") {
+            Button {
+                withAnimation(AppTheme.Motion.commandSpace) {
+                    workspaceViewModel.isCommandSpaceVisible.toggle()
+                }
+            } label: {
+                Text(workspaceViewModel.isCommandSpaceVisible
+                     ? "Hide Command Space"
+                     : "Show Command Space")
+            }
+            .keyboardShortcut("k", modifiers: .command)
+        }
+    }
+}
