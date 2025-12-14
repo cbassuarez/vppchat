@@ -119,6 +119,15 @@ struct VPPChatApp: App {
             .onChange(of: workspaceViewModel.isCommandSpaceVisible) { visible in
                 themeManager.signal(visible ? .commandSpaceOpen : .commandSpaceClose)
             }
+            .onAppear {
+                workspaceViewModel.switchToShell = { mode in
+                    shellMode = mode
+                }
+                workspaceViewModel.currentShellMode = shellMode
+            }
+            .onChange(of: shellMode) { newValue in
+                workspaceViewModel.currentShellMode = newValue
+            }
             .background(Color.clear)
             .background(
                 WindowConfigurator { window in
