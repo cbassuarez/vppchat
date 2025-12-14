@@ -32,6 +32,7 @@ struct SessionView: View {
         VStack(spacing: 0) {
             MessageListView(
                 messages: consoleViewModel.messages,
+                sessionID: session.id,
                 onRetry: retryLastUser
             )
 
@@ -117,8 +118,7 @@ extension SessionView {
                 vppValidation: VppRuntime.VppValidationResult(
                     isValid: message.isValidVpp,
                     issues: message.validationIssues
-                ),
-                linkedSessionID: session.id
+                )
             )
         }
     }
@@ -164,5 +164,6 @@ extension SessionView {
     let appVM = AppViewModel()
     if let session = appVM.store.sessions.first {
         SessionView(session: session, appViewModel: appVM)
+            .environmentObject(WorkspaceViewModel())
     }
 }

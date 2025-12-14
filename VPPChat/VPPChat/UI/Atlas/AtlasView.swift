@@ -24,6 +24,7 @@ struct AtlasView: View {
     var onSendToConsole: ((Block) -> Void)? = nil
 
     @EnvironmentObject private var workspaceVM: WorkspaceViewModel
+    @Environment(\.shellModeBinding) private var shellModeBinding
     @StateObject private var filters = AtlasFilterState()
 
     // Which dropdown is currently open
@@ -378,6 +379,18 @@ struct AtlasView: View {
     }
 
     private func sendToConsole(block: Block) {
+        if let scene = workspaceVM.store.scene(id: block.sceneID),
+           let track = workspaceVM.store.track(id: scene.trackID),
+           let project = workspaceVM.store.project(for: track.id) {
+            let session = workspaceVM.openConsole(
+                for: block,
+                project: project,
+                track: track,
+                scene: scene
+            )
+            workspaceVM.touchConsoleSession(session.id)
+            shellModeBinding?.wrappedValue = .console
+        }
         onSendToConsole?(block)
     }
 }

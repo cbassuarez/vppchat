@@ -2,13 +2,14 @@ import SwiftUI
 
 struct MessageListView: View {
     var messages: [ConsoleMessage]
+    var sessionID: ConsoleSession.ID
     var onRetry: (() -> Void)?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.base * 1.5) {
                 ForEach(messages) { message in
-                    ConsoleMessageRow(message: message, onRetry: onRetry)
+                    ConsoleMessageRow(message: message, sessionID: sessionID, onRetry: onRetry)
                         .padding(.horizontal, AppTheme.Spacing.outerHorizontal)
                         .transition(.asymmetric(
                             insertion: AnyTransition.opacity
@@ -37,14 +38,52 @@ struct BlurModifier: ViewModifier {
 
 struct ConsoleMessageRow: View {
     let message: ConsoleMessage
+    let sessionID: ConsoleSession.ID
     let onRetry: (() -> Void)?
 
+    @EnvironmentObject private var workspace: WorkspaceViewModel
+    @Environment(\.shellModeBinding) private var shellModeBinding
+
     @State private var showVppDetails = false
+    @State private var isSaveSheetPresented = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            vppIndicator
-            bubble
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
+                vppIndicator
+                bubble
+            }
+
+            if let link = message.linkedBlock {
+                Button {
+                    workspace.navigateToBlock(with: link)
+                    shellModeBinding?.wrappedValue = .studio
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "link")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Filed in: \(link.displayPath)")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .contextMenu {
+            Button("Save as block in Studio…") {
+                isSaveSheetPresented = true
+            }
+        }
+        .sheet(isPresented: $isSaveSheetPresented) {
+            SaveBlockFromMessageSheet(
+                message: message,
+                projects: workspace.store.allProjects,
+                onSave: { selection in
+                    workspace.saveBlock(from: message, in: sessionID, selection: selection)
+                }
+            )
+            .environmentObject(workspace)
         }
     }
 
@@ -313,7 +352,8 @@ struct ErrorAssistantBubble: View {
             createdAt: session.createdAt,
             messages: SessionView.makeConsoleMessages(from: session)
         )
-        MessageListView(messages: seeded.messages, onRetry: nil)
+        MessageListView(messages: seeded.messages, sessionID: seeded.id, onRetry: nil)
             .background(NoiseBackground())
+            .environmentObject(WorkspaceViewModel())
     }
 }
