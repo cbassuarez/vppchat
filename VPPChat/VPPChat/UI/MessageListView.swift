@@ -1,13 +1,14 @@
 import SwiftUI
 
 struct MessageListView: View {
-    var messages: [Message]
+    var messages: [ConsoleMessage]
+    var onRetry: (() -> Void)?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.base * 1.5) {
                 ForEach(messages) { message in
-                    MessageRow(message: message)
+                    ConsoleMessageRow(message: message, onRetry: onRetry)
                         .padding(.horizontal, AppTheme.Spacing.outerHorizontal)
                         .transition(.asymmetric(
                             insertion: AnyTransition.opacity
@@ -33,21 +34,189 @@ struct BlurModifier: ViewModifier {
         content.blur(radius: radius)
     }
 }
+
+struct ConsoleMessageRow: View {
+    let message: ConsoleMessage
+    let onRetry: (() -> Void)?
+
+    @State private var showVppDetails = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            vppIndicator
+            bubble
+        }
+    }
+
+    @ViewBuilder
+    private var vppIndicator: some View {
+        if let validation = message.vppValidation, !validation.isValid {
+            Button {
+                showVppDetails.toggle()
+            } label: {
+                Text("VPP ⚠︎")
+                    .font(.system(size: 9, weight: .semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(AppTheme.Colors.surface1)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showVppDetails) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("VPP validation issues")
+                        .font(.system(size: 12, weight: .semibold))
+                    if validation.issues.isEmpty {
+                        Text("No details available.")
+                            .font(.system(size: 11))
+                    } else {
+                        ForEach(validation.issues, id: \.self) { issue in
+                            Text("• " + issue)
+                                .font(.system(size: 11))
+                        }
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: 260)
+            }
+        } else {
+            Rectangle()
+                .fill(.clear)
+                .frame(width: 30)
+        }
+    }
+
+    @ViewBuilder
+    private var bubble: some View {
+        switch message.state {
+        case .normal:
+            ExistingBubbleView(message: message)
+
+        case .pending:
+            PendingAssistantBubble()
+
+        case .error(let errorMessage):
+            ErrorAssistantBubble(
+                errorText: errorMessage ?? "Network error",
+                onRetry: onRetry
+            )
+        }
+    }
+}
+
+struct ExistingBubbleView: View {
+    let message: ConsoleMessage
+
+    private var authorLabel: String {
+        switch message.role {
+        case .user: return "YOU"
+        case .assistant: return "ASSISTANT"
+        case .system: return "SYSTEM"
+        }
+    }
+
+    private var validation: VppRuntime.VppValidationResult? { message.vppValidation }
+    private var isValid: Bool { validation?.isValid ?? true }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var theme: ThemeManager
+
+    @State private var showInvalidPulse: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(authorLabel)
+                    .font(.system(size: 11, weight: .semibold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(AppTheme.Colors.textSubtle)
+                Spacer()
+                Text(message.createdAt, style: .time)
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+            }
+
+            StreamingMessageBody(message: message)
+
+            HStack {
+                Spacer()
+                validityDot
+            }
+        }
+        .padding(AppTheme.Spacing.cardInner)
+        .background(
+            AppTheme.Colors.surface2
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
+                .stroke(borderColor, lineWidth: showInvalidPulse ? 2.0 : 1.0)
+                .shadow(color: glowColor, radius: showInvalidPulse ? 10 : 0)
+        )
+        .shadow(color: Color.black.opacity(0.16), radius: 6, x: 6, y: 6)
+        .onAppear {
+            triggerInvalidPulseIfNeeded()
+        }
+        .onChange(of: isValid) { _ in
+            triggerInvalidPulseIfNeeded()
+        }
+    }
+
+    private var borderColor: Color {
+        isValid ? AppTheme.Colors.borderSoft : AppTheme.Colors.statusMajor
+    }
+
+    private var glowColor: Color {
+        isValid ? Color.clear : AppTheme.Colors.statusMajor.opacity(0.55)
+    }
+
+    private func triggerInvalidPulseIfNeeded() {
+        guard !isValid, !reduceMotion else { return }
+
+        showInvalidPulse = false
+        theme.signal(.errorHighlight)
+
+        withAnimation(AppTheme.Motion.invalidPulse) {
+            showInvalidPulse = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+            withAnimation(AppTheme.Motion.invalidPulse) {
+                showInvalidPulse = false
+            }
+        }
+    }
+
+    private var validityDot: some View {
+        Group {
+            if isValid {
+                Circle()
+                    .fill(AppTheme.Colors.statusCorrect)
+                    .frame(width: 8, height: 8)
+            } else {
+                Circle()
+                    .fill(AppTheme.Colors.statusMajor)
+                    .frame(width: 8, height: 8)
+            }
+        }
+    }
+}
+
 struct StreamingMessageBody: View {
-    let message: Message
+    let message: ConsoleMessage
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var visibleLines: Int = 0
 
     private var lines: [String] {
-        message.body
+        message.text
             .split(whereSeparator: \.isNewline)
             .map(String.init)
     }
 
     private var shouldAnimate: Bool {
-        // Animate assistant / model output, keep user messages snappy
-        !message.isUser
+        message.role == .assistant
     }
 
     var body: some View {
@@ -80,128 +249,71 @@ struct StreamingMessageBody: View {
     }
 }
 
-struct MessageRow: View {
-    let message: Message
-
-    private var authorLabel: String {
-        message.isUser ? "YOU" : "ASSISTANT"
-    }
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @EnvironmentObject private var theme: ThemeManager
-
-    @State private var showInvalidPulse: Bool = false
-
+struct PendingAssistantBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(authorLabel)
-                    .font(.system(size: 11, weight: .semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(AppTheme.Colors.textSubtle)
-                Spacer()
-                Text(message.timestamp, style: .time)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-            }
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(AppTheme.Colors.surface1.opacity(0.7))
+                .frame(width: 80, height: 10)
+                .redacted(reason: .placeholder)
 
-            // Streaming body instead of a single Text
-            StreamingMessageBody(message: message)
-
-            HStack(spacing: 8) {
-                metaChip(label: "TAG", value: message.tag.rawValue.uppercased())
-                metaChip(label: "CYCLE", value: "\(message.cycleIndex)")
-                metaChip(label: "ASSUMPTIONS", value: "\(message.assumptions)")
-                metaChip(label: "SOURCES", value: message.sources.rawValue.uppercased())
-                if let locus = message.locus, !locus.isEmpty {
-                    metaChip(label: "LOCUS", value: locus)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                validityDot
-            }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(AppTheme.Colors.textSecondary)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(AppTheme.Colors.surface1.opacity(0.6))
+                .frame(width: 120, height: 10)
+                .redacted(reason: .placeholder)
         }
-        .padding(AppTheme.Spacing.cardInner)
+        .padding(10)
         .background(
-            AppTheme.Colors.surface2
-                .background(.thinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AppTheme.Colors.surface1)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
-                .stroke(borderColor, lineWidth: showInvalidPulse ? 2.0 : 1.0)
-                .shadow(color: glowColor, radius: showInvalidPulse ? 10 : 0)
-        )
-        .shadow(color: Color.black.opacity(0.16), radius: 6, x: 6, y: 6)
-        .onAppear {
-            triggerInvalidPulseIfNeeded()
-        }
-        .onChange(of: message.isValidVpp) { _ in
-            triggerInvalidPulseIfNeeded()
-        }
-    }
-
-    private var borderColor: Color {
-        message.isValidVpp ? AppTheme.Colors.borderSoft : AppTheme.Colors.statusMajor
-    }
-
-    private var glowColor: Color {
-        message.isValidVpp ? Color.clear : AppTheme.Colors.statusMajor.opacity(0.55)
-    }
-
-    private func triggerInvalidPulseIfNeeded() {
-        guard !message.isValidVpp, !reduceMotion else { return }
-
-        showInvalidPulse = false
-        theme.signal(.errorHighlight)
-
-        withAnimation(AppTheme.Motion.invalidPulse) {
-            showInvalidPulse = true
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
-            withAnimation(AppTheme.Motion.invalidPulse) {
-                showInvalidPulse = false
-            }
-        }
-    }
-
-    private func metaChip(label: String, value: String) -> some View {
-        HStack(spacing: 4) {
-            Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .textCase(.uppercase)
-            Text(value)
-                .font(.system(size: 11, weight: .regular))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(AppTheme.Colors.surface2.opacity(0.7))
-        .clipShape(Capsule())
-    }
-
-    private var validityDot: some View {
-        Group {
-            if message.isValidVpp {
-                Circle()
-                    .fill(AppTheme.Colors.statusCorrect)
-                    .frame(width: 8, height: 8)
-            } else {
-                Circle()
-                    .fill(AppTheme.Colors.statusMajor)
-                    .frame(width: 8, height: 8)
-            }
-        }
     }
 }
 
+struct ErrorAssistantBubble: View {
+    let errorText: String
+    let onRetry: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(errorText)
+                .font(.system(size: 12))
+                .foregroundStyle(AppTheme.Colors.textSecondary)
+
+            if let onRetry {
+                Button(action: onRetry) {
+                    Text("Retry")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(AppTheme.Colors.surface0)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AppTheme.Colors.surface1.opacity(0.9))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(AppTheme.Colors.exceptionAccent.opacity(0.7), lineWidth: 1)
+        )
+    }
+}
 
 #Preview {
     let appVM = AppViewModel()
-    MessageListView(messages: appVM.store.sessions.first?.messages ?? [])
-        .background(NoiseBackground())
+    if let session = appVM.store.sessions.first {
+        let seeded = ConsoleSession(
+            id: session.id,
+            title: session.name,
+            createdAt: session.createdAt,
+            messages: SessionView.makeConsoleMessages(from: session)
+        )
+        MessageListView(messages: seeded.messages, onRetry: nil)
+            .background(NoiseBackground())
+    }
 }

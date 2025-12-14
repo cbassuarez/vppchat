@@ -6,6 +6,8 @@ struct ComposerView: View {
     @Binding var sources: VppSources
 
     @ObservedObject var runtime: VppRuntime
+    /// Controlled by the Console layer.
+    let sendPhase: SendPhase = .idleDisabled
     var sendAction: () -> Void
     var tagSelection: (VppTag) -> Void
     var stepCycle: () -> Void
@@ -15,10 +17,6 @@ struct ComposerView: View {
     @EnvironmentObject private var theme: ThemeManager
     private var trimmedDraft: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var sendPhase: SendPhase {
-        trimmedDraft.isEmpty ? .idleDisabled : .idleReady
     }
     private let echoableTags: Set<VppTag> = [.g, .q, .o, .c]
 
@@ -309,9 +307,17 @@ struct ComposerView: View {
     // MARK: - Send
 
     private var sendButton: some View {
-        SendButton(
+        let isEnabled: Bool
+        switch sendPhase {
+        case .idleReady:
+            isEnabled = true
+        default:
+            isEnabled = false
+        }
+
+        return SendButton(
             phase: sendPhase,
-            isEnabled: !trimmedDraft.isEmpty,
+            isEnabled: isEnabled,
             action: sendAction
         )
         .fixedSize() // 👈 keep it compact; no full-width expansion
