@@ -87,8 +87,24 @@ final class ThemeManager: ObservableObject {
     }
 
     /// Background "activity" 0 = idle, 1 = intense thinking.
-    /// Animate this from view models when the visible context is "thinking".
     @Published var activity: CGFloat = 0.25
+
+    /// Baseline for the shader when nothing special is happening.
+    private let baseActivity: CGFloat = 0.25
+
+    /// Used to avoid overlapping decays when events fire frequently.
+    private var activityDecayWorkItem: DispatchWorkItem?
+
+    enum MotionEvent {
+        case hover
+        case tap
+        case modeChange
+        case commandSpaceOpen
+        case commandSpaceClose
+        case thinkingStart
+        case thinkingEnd
+        case errorHighlight
+    }
 
     init() {
         if let saved = UserDefaults.standard.string(forKey: "AccentPalette.current"),
@@ -102,7 +118,49 @@ final class ThemeManager: ObservableObject {
 
     var structuralAccent: Color { palette.structural }
     var exceptionAccent: Color { palette.exception }
+
+    /// Call this from UI interactions to make the shader noticeably react.
+    func signal(_ event: MotionEvent) {
+        let boost: CGFloat
+
+        switch event {
+        case .hover:
+            boost = 0.08
+        case .tap:
+            boost = 0.18
+        case .modeChange:
+            boost = 0.32
+        case .commandSpaceOpen:
+            boost = 0.40
+        case .commandSpaceClose:
+            boost = 0.20
+        case .thinkingStart:
+            boost = 0.55
+        case .thinkingEnd:
+            boost = 0.30
+        case .errorHighlight:
+            boost = 0.35
+        }
+
+        let target = min(1.0, baseActivity + boost)
+
+        activityDecayWorkItem?.cancel()
+
+        withAnimation(AppTheme.Motion.activitySpike) {
+            activity = target
+        }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            withAnimation(AppTheme.Motion.activitySettling) {
+                self.activity = self.baseActivity
+            }
+        }
+        activityDecayWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: workItem)
+    }
 }
+
 
 // MARK: - AppTheme tokens (light aerogel)
 
@@ -164,9 +222,71 @@ enum AppTheme {
     }
 
     enum Motion {
-        static let fast: Double = 0.18
-        static let medium: Double = 0.25
-    }
+            // Existing scalars (keep if you’re using them)
+            static let fast: Double = 0.18
+            static let medium: Double = 0.25
+
+            // 🌊 Shell mode changes: languid but responsive
+            static let shellSwitch: Animation = .spring(
+                response: 0.45,
+                dampingFraction: 0.82,
+                blendDuration: 0.12
+            )
+        // Ink “inking” when the button becomes enabled
+                static let sendInkIn = Animation.spring(
+                    response: 0.32,
+                    dampingFraction: 0.8,
+                    blendDuration: 0.1
+                )
+
+                // Ink “de-inking” when the button becomes disabled
+                static let sendInkOut = Animation.easeOut(duration: 0.8)
+        
+            // 🎛 Toolbar / chip interactions
+            static let chipPress: Animation = .easeOut(duration: 0.18)
+            static let chipHover: Animation = .easeOut(duration: 0.15)
+
+            // ⌨️ Command Space (grow from command button, mid-level dim)
+            static let commandSpace: Animation = .spring(
+                response: 0.38,
+                dampingFraction: 0.86,
+                blendDuration: 0.1
+            )
+
+            static let commandSpaceDimOpacity: Double = 0.24
+
+            static var commandSpaceTransition: AnyTransition {
+                // “Grow from button” feeling: scale from top-trailing + fade
+                .scale(scale: 0.94, anchor: .topTrailing)
+                    .combined(with: .opacity)
+            }
+
+            // 🔆 Shader spikes on interactions
+            static let activitySpike: Animation = .easeOut(duration: 0.35)
+            static let activitySettling: Animation = .easeOut(duration: 1.0)
+
+            // 🚨 Invalid VPP pulse
+            static let invalidPulse: Animation = .easeOut(duration: 0.28)
+        
+        // Brief, snappy spring for send taps
+            static let sendTap = Animation.spring(
+                response: 0.22,
+                dampingFraction: 0.82,
+                blendDuration: 0.05
+            )
+
+            // Duration for phase cross-fades on the button
+            static let sendPhase = Animation.easeInOut(duration: 0.18)
+        }
+
+        enum Icons {
+            // Canonical VPP glyphs (you can reuse these everywhere)
+            static let tag        = "tag.fill"
+            static let cycle      = "arrow.triangle.2.circlepath"
+            static let assumptions = "exclamationmark.triangle"
+            static let sources    = "link.circle"
+            static let locus      = "scope"
+        }
 }
 
 // MARK: - Public background view (shader + veil)

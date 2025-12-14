@@ -13,6 +13,15 @@ struct ComposerView: View {
 
     @State private var isQualityExpanded = false
     @EnvironmentObject private var theme: ThemeManager
+    private var trimmedDraft: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var sendPhase: SendPhase {
+        trimmedDraft.isEmpty ? .idleDisabled : .idleReady
+    }
+    private let echoableTags: Set<VppTag> = [.g, .q, .o, .c]
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.base * 1.25) {
             metaBand
@@ -49,17 +58,10 @@ struct ComposerView: View {
                         .textCase(.uppercase)
                         .foregroundStyle(AppTheme.Colors.textSubtle)
 
-                    Text("\(runtime.state.cycleIndex) / 3")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-
-                    HStack(spacing: 4) {
-                        pillIconButton(systemName: "arrow.uturn.left") {
-                            resetCycle()
-                        }
-                        pillIconButton(systemName: "chevron.right") {
-                            stepCycle()
-                        }
+                    HStack(spacing: 6) {
+                        Text("\(runtime.state.cycleIndex) / 3")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(AppTheme.Colors.textSecondary)
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -67,7 +69,7 @@ struct ComposerView: View {
                     .clipShape(Capsule())
                 }
 
-                // Assumptions as discrete chips (no +/- / Stepper)
+                // Assumptions as discrete chips (unchanged)
                 HStack(spacing: 6) {
                     Text("ASSUMPTIONS")
                         .font(.system(size: 10, weight: .semibold))
@@ -94,19 +96,27 @@ struct ComposerView: View {
                     .foregroundStyle(AppTheme.Colors.textSubtle)
 
                 HStack(spacing: 6) {
-                    TextField("current thread", text: Binding(
-                        get: { runtime.state.locus ?? "" },
-                        set: { runtime.setLocus($0.isEmpty ? nil : $0) }
-                    ))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    HStack(spacing: 6) {
+                        Image(systemName: "scope")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.Colors.textSubtle)
+
+                        Text(runtime.state.locus ?? "Auto from assistant")
+                            .font(.system(size: 12))
+                            .foregroundStyle(
+                                (runtime.state.locus ?? "").isEmpty
+                                ? AppTheme.Colors.textSubtle
+                                : AppTheme.Colors.textSecondary
+                            )
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(AppTheme.Colors.surface0)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .foregroundStyle(AppTheme.Colors.textPrimary)
 
-                    // Sources cluster - designed for future expansion
+                    // Sources cluster - unchanged
                     HStack(spacing: 4) {
                         sourceChip("None", isSelected: sources == .none) {
                             sources = .none
@@ -125,8 +135,65 @@ struct ComposerView: View {
     // Tag row just above editor
     private var tagBand: some View {
         HStack {
-            TagChipsView(selected: runtime.state.currentTag, onSelect: tagSelection)
+            TagChipsView(
+                primary: runtime.state.currentTag,
+                echoTarget: modifiers.echoTarget,
+                onSelect: handleTagTap(_:)
+            )
             Spacer()
+        }
+    }
+
+
+    /// Tags you can reasonably echo *to* when using !<e> --<tag>.
+    /// Adjust if you want to allow fewer/more destinations.
+    private var echoTargetTags: [VppTag] {
+        [.g, .q, .o, .c, .e_o]
+    }
+
+    private var echoTargetRow: some View {
+        HStack(spacing: 6) {
+            Text("Echo to")
+                .font(.system(size: 10, weight: .semibold))
+                .textCase(.uppercase)
+                .foregroundStyle(AppTheme.Colors.textSubtle)
+
+            ForEach(echoTargetTags, id: \.self) { tag in
+                let isSelected = (modifiers.echoTarget == tag)
+
+                Button {
+                    modifiers.echoTarget = tag
+                } label: {
+                    Text(tagLabel(tag))
+                        .font(.system(size: 10, weight: .semibold))
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(
+                                    isSelected
+                                    ? echoAccent(for: tag).opacity(0.18)
+                                    : AppTheme.Colors.surface0.opacity(0.8)
+                                )
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(
+                                    isSelected
+                                    ? echoAccent(for: tag)
+                                    : AppTheme.Colors.borderSoft,
+                                    lineWidth: isSelected ? 1.2 : 1.0
+                                )
+                        )
+                        .foregroundStyle(
+                            isSelected
+                            ? AppTheme.Colors.textPrimary
+                            : AppTheme.Colors.textSecondary
+                        )
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -227,7 +294,14 @@ struct ComposerView: View {
                         ) { modifiers.severity = .major }
                     }
                 }
-                .transition(.move(edge: .leading).combined(with: .opacity))
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity
+                            .combined(with: .scale(scale: 0.98, anchor: .topLeading)),
+                        removal: .opacity
+                            .combined(with: .scale(scale: 0.98, anchor: .topLeading))
+                    )
+                )
             }
         }
     }
@@ -235,24 +309,83 @@ struct ComposerView: View {
     // MARK: - Send
 
     private var sendButton: some View {
-        Button(action: sendAction) {
-            Label("Send", systemImage: "paperplane.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule()
-                        .fill(theme.structuralAccent)
-                )
-                .foregroundStyle(Color.white)
-                .shadow(color: AppTheme.Colors.structuralAccent.opacity(0.6),
-                        radius: 16, x: 0, y: 10)
-        }
-        .buttonStyle(.plain)
-        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1.0)
+        SendButton(
+            phase: sendPhase,
+            isEnabled: !trimmedDraft.isEmpty,
+            action: sendAction
+        )
+        .fixedSize() // 👈 keep it compact; no full-width expansion
         .keyboardShortcut(.return, modifiers: [.command])
-        .scaleEffect(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 1.0 : 1.01)
+    }
+    
+    /// Inline E / echo behavior:
+    /// - Normal: one primary tag.
+    /// - If primary is E, we also use `modifiers.echoTarget` as `--<tag>`.
+    private func handleTagTap(_ tapped: VppTag) {
+        let current = runtime.state.currentTag
+        var newPrimary = current
+        var newEcho = modifiers.echoTarget
+
+        // Helper: safe default when we need "some" tag to fall back to.
+        func defaultPrimary() -> VppTag {
+            // Prefer existing echo if it’s valid, otherwise fall back to G.
+            if let echo = newEcho, echoableTags.contains(echo) {
+                return echo
+            }
+            if echoableTags.contains(current) {
+                return current
+            }
+            return .g
+        }
+
+        switch (current, tapped) {
+
+        // 1. Not in E mode yet, user taps E → enter escape mode: !<e> --<primary?>
+        case let (primary, .e) where primary != .e:
+            newPrimary = .e
+            if echoableTags.contains(primary) {
+                newEcho = primary
+            } else {
+                newEcho = .g
+            }
+
+        // 1b. Not in E mode, tapping any non-E tag → simple selection.
+        case (_, let tag) where current != .e:
+            newPrimary = tag
+            newEcho = nil
+
+        // 2. Already in E mode, user taps E again → exit escape mode.
+        case (.e, .e):
+            newPrimary = defaultPrimary()
+            newEcho = nil
+
+        // 2b. In E mode, tap an echoable tag:
+        //     - first tap: choose echo target and stay in E
+        //     - second tap on same tag: exit E to that tag.
+        case (.e, let tag) where echoableTags.contains(tag):
+            if newEcho == tag {
+                // Tapping same echo target → exit E mode to that tag.
+                newPrimary = tag
+                newEcho = nil
+            } else {
+                // Change echo target, remain in E mode.
+                newPrimary = .e
+                newEcho = tag
+            }
+
+        // 2c. In E mode, tap a non-echoable tag (e.g. e_o):
+        //     treat as normal main tag, exit E mode.
+        case (.e, let tag):
+            newPrimary = tag
+            newEcho = nil
+
+        default:
+            break
+        }
+
+        // Commit updates
+        modifiers.echoTarget = newEcho
+        tagSelection(newPrimary)
     }
 
     // MARK: - Helpers
@@ -344,6 +477,27 @@ struct ComposerView: View {
                 .foregroundStyle(selected ? textColor : AppTheme.Colors.textSecondary)
         }
         .buttonStyle(.plain)
+    }
+    
+    private func echoAccent(for tag: VppTag) -> Color {
+        switch tag {
+        case .e, .e_o:
+            return AppTheme.Colors.exceptionAccent
+        default:
+            return AppTheme.Colors.structuralAccent
+        }
+    }
+
+    private func tagLabel(_ tag: VppTag) -> String {
+        switch tag {
+        case .g:   return "G"
+        case .q:   return "Q"
+        case .o:   return "O"
+        case .c:   return "C"
+        case .o_f: return "O_F"
+        case .e:   return "E"
+        case .e_o: return "E_O"
+        }
     }
 
     private func severityChip(

@@ -4,43 +4,40 @@ struct StudioView: View {
     @EnvironmentObject private var vm: WorkspaceViewModel
     @EnvironmentObject private var theme: ThemeManager
     @State private var isAccentDrawerPresented = false
-
     @State private var isThemeDrawerOpen = false
-    
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        
         VStack(spacing: 14) {
             header
-            
+
             HStack(alignment: .top, spacing: 14) {
                 TracksRailView()
                     .environmentObject(vm)
                     .frame(width: 240)
-                
+
                 if let scene = vm.selectedScene {
                     SceneCanvasView(scene: scene)
                         .environmentObject(vm)
                 } else {
                     placeholder
                 }
-                
+
                 InspectorView()
                     .frame(width: 260)
             }
             .padding(12)
             .background(
-                            ZStack {
-                                
-                                // Light tint so it reads as glass, not metal
-                                RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
-                                    .fill(AppTheme.Colors.surface0)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
-                                            .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
-                                    )
-                            }
+                ZStack {
+                    RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
+                        .fill(AppTheme.Colors.surface0)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
+                                .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
                         )
+                }
+            )
         }
         .padding(18)
     }

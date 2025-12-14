@@ -386,34 +386,34 @@ struct AtlasView: View {
 
 private struct PopoverChrome<Content: View>: View {
     @ViewBuilder var content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             content
         }
         .padding(12)
-        // 1) Blur, clipped to rounded rect, at 50% opacity
+        .background(
+            .ultraThinMaterial.opacity(0.5),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.thinMaterial)
-                .opacity(0.5)
+                .fill(AppTheme.Colors.surface2)
         )
-        // 2) Soft tint on top of the blur, same shape
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(AppTheme.Colors.surface1)
-        )
-        // 3) Hairline border
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
         )
-        // 4) Force *everything* (blur, tint, content) to share the same corners
         .clipShape(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
         )
-        // 5) Softer, lighter shadow
-        .shadow(color: Color.black.opacity(0.08), radius: 10, x: 2, y: 6)
+        .shadow(color: Color.black.opacity(0.10), radius: 16, x: 6, y: 12)
+        .transition(
+            reduceMotion
+            ? .opacity
+            : .scale(scale: 0.96, anchor: .topLeading).combined(with: .opacity)
+        )
     }
 }
 

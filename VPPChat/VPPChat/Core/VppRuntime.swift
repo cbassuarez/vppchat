@@ -4,6 +4,8 @@ import Combine
 // VppRuntime encapsulates the current VPP state machine and helpers for synthesizing headers/footers.
 final class VppRuntime: ObservableObject {
     @Published var state: VppState
+    /// Tags that the runtime is allowed to use as echo targets with !<e> --<tag>.
+    private let vppEchoableTags: Set<VppTag> = [.g, .q, .o, .c]
 
     private let allowedNextTags: [VppTag: [VppTag]] = [
         .g: [.q, .o],
@@ -65,7 +67,18 @@ final class VppRuntime: ObservableObject {
             break
         }
 
-        if let echo = modifiers.echoTarget {
+        var echo = modifiers.echoTarget
+
+        // If we're in E and echo is nil or invalid, default it conservatively.
+        if tag == .e {
+            if let candidate = echo, vppEchoableTags.contains(candidate) {
+                // ok
+            } else {
+                echo = .g
+            }
+        }
+
+        if let echo, echo != .e, echo != .e_o {
             parts.append("--<\(echo.rawValue)>")
         }
 
@@ -119,3 +132,66 @@ final class VppRuntime: ObservableObject {
         return VppValidationResult(isValid: issues.isEmpty, issues: issues)
     }
 }
+
+extension VppRuntime {
+    /// Ingests a footer line like:
+    /// [Version=v1.4 | Tag=<c_3> | Sources=<web> | Assumptions=2 | Cycle=3/3 | Locus=SomeThread]
+    /// and updates state.currentTag, state.cycleIndex, state.locus accordingly.
+    func ingestFooterLine(_ footerLine: String) {
+        var line = footerLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.hasPrefix("[") { line.removeFirst() }
+        if line.hasSuffix("]") { line.removeLast() }
+
+        let parts = line
+            .split(separator: "|")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+
+        for part in parts {
+            // TAG=<c_3> → tag + cycle
+            if part.hasPrefix("Tag=") {
+                let raw = part.dropFirst("Tag=".count)
+                    .trimmingCharacters(in: .whitespaces)
+
+                // Expect something like "<c_3>"
+                let trimmed = raw.trimmingCharacters(
+                    in: CharacterSet(charactersIn: "<>")
+                )
+
+                // "c_3" → ["c", "3"]
+                let components = trimmed.split(separator: "_", maxSplits: 1)
+                if let tagToken = components.first,
+                   let tag = VppTag(rawValue: String(tagToken)) {
+                    state.currentTag = tag
+                }
+
+                if components.count == 2,
+                   let idx = Int(components[1]) {
+                    state.cycleIndex = max(1, idx)
+                }
+            }
+
+            // Cycle=3/3 → cycleIndex
+            else if part.hasPrefix("Cycle=") {
+                let raw = part.dropFirst("Cycle=".count)
+                    .trimmingCharacters(in: .whitespaces)
+                // "3/3" → "3"
+                if let firstComponent = raw.split(separator: "/").first,
+                   let idx = Int(firstComponent) {
+                    state.cycleIndex = max(1, idx)
+                }
+            }
+
+            // Locus=FooBar → locus
+            else if part.hasPrefix("Locus=") {
+                let raw = part.dropFirst("Locus=".count)
+                    .trimmingCharacters(in: .whitespaces)
+                if raw.isEmpty || raw.lowercased() == "nil" {
+                    setLocus(nil)
+                } else {
+                    setLocus(raw)
+                }
+            }
+        }
+    }
+}
+

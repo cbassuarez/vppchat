@@ -33,6 +33,52 @@ struct BlurModifier: ViewModifier {
         content.blur(radius: radius)
     }
 }
+struct StreamingMessageBody: View {
+    let message: Message
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @State private var visibleLines: Int = 0
+
+    private var lines: [String] {
+        message.body
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+    }
+
+    private var shouldAnimate: Bool {
+        // Animate assistant / model output, keep user messages snappy
+        !message.isUser
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                Text(line)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(AppTheme.Colors.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .opacity(visibleLines > index ? 1 : 0)
+                    .animation(
+                        reduceMotion || !shouldAnimate
+                        ? .none
+                        : .easeOut(duration: 0.22)
+                            .delay(Double(index) * 0.06),
+                        value: visibleLines
+                    )
+            }
+        }
+        .onAppear {
+            if reduceMotion || !shouldAnimate {
+                visibleLines = lines.count
+            } else {
+                visibleLines = 0
+                DispatchQueue.main.async {
+                    visibleLines = lines.count
+                }
+            }
+        }
+    }
+}
 
 struct MessageRow: View {
     let message: Message
@@ -40,6 +86,11 @@ struct MessageRow: View {
     private var authorLabel: String {
         message.isUser ? "YOU" : "ASSISTANT"
     }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var theme: ThemeManager
+
+    @State private var showInvalidPulse: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -54,10 +105,8 @@ struct MessageRow: View {
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }
 
-            Text(message.body)
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(AppTheme.Colors.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // Streaming body instead of a single Text
+            StreamingMessageBody(message: message)
 
             HStack(spacing: 8) {
                 metaChip(label: "TAG", value: message.tag.rawValue.uppercased())
@@ -78,21 +127,47 @@ struct MessageRow: View {
         }
         .padding(AppTheme.Spacing.cardInner)
         .background(
-            ZStack {
-            
-
-                RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
-                    .fill(AppTheme.Colors.surface1)
-            }
-            .clipShape(
-                RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
-            )
+            AppTheme.Colors.surface2
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous))
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppTheme.Radii.card, style: .continuous)
-                .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                .stroke(borderColor, lineWidth: showInvalidPulse ? 2.0 : 1.0)
+                .shadow(color: glowColor, radius: showInvalidPulse ? 10 : 0)
         )
-        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 6, y: 6)
+        .shadow(color: Color.black.opacity(0.16), radius: 6, x: 6, y: 6)
+        .onAppear {
+            triggerInvalidPulseIfNeeded()
+        }
+        .onChange(of: message.isValidVpp) { _ in
+            triggerInvalidPulseIfNeeded()
+        }
+    }
+
+    private var borderColor: Color {
+        message.isValidVpp ? AppTheme.Colors.borderSoft : AppTheme.Colors.statusMajor
+    }
+
+    private var glowColor: Color {
+        message.isValidVpp ? Color.clear : AppTheme.Colors.statusMajor.opacity(0.55)
+    }
+
+    private func triggerInvalidPulseIfNeeded() {
+        guard !message.isValidVpp, !reduceMotion else { return }
+
+        showInvalidPulse = false
+        theme.signal(.errorHighlight)
+
+        withAnimation(AppTheme.Motion.invalidPulse) {
+            showInvalidPulse = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+            withAnimation(AppTheme.Motion.invalidPulse) {
+                showInvalidPulse = false
+            }
+        }
     }
 
     private func metaChip(label: String, value: String) -> some View {
@@ -105,11 +180,7 @@ struct MessageRow: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(
-            AppTheme.Colors.surface1
-                .opacity(0.9)
-                .background(AppTheme.Colors.surface2)
-        )
+        .background(AppTheme.Colors.surface2.opacity(0.7))
         .clipShape(Capsule())
     }
 
@@ -121,12 +192,13 @@ struct MessageRow: View {
                     .frame(width: 8, height: 8)
             } else {
                 Circle()
-                    .fill(AppTheme.Colors.statusMinor)
+                    .fill(AppTheme.Colors.statusMajor)
                     .frame(width: 8, height: 8)
             }
         }
     }
 }
+
 
 #Preview {
     let appVM = AppViewModel()
