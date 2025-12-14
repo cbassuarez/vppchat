@@ -106,6 +106,7 @@ private struct ConsoleSessionSidebar: View {
 
 private struct ConsoleSessionView: View {
     @EnvironmentObject private var workspace: WorkspaceViewModel
+    @EnvironmentObject private var llmConfig: LLMConfigStore
     @FocusState private var composerFocused: Bool
     @State private var lastComposerFocusToken: Int = 0
     @State private var draftText: String = ""
@@ -152,7 +153,7 @@ private struct ConsoleSessionView: View {
 
     private func handleSend() {
         let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, var active = workspace.selectedConsoleSession else { return }
+        guard !trimmed.isEmpty else { return }
 
         let header = workspace.vppRuntime.makeHeader(
             tag: workspace.vppRuntime.state.currentTag,
@@ -160,15 +161,16 @@ private struct ConsoleSessionView: View {
         )
         let composedText = "\(header)\n\(trimmed)"
 
-        let msg = ConsoleMessage(
-            role: .user,
-            text: composedText,
-            state: .normal
+        draftText = ""
+
+        let config = WorkspaceViewModel.LLMRequestConfig(
+            modelID: llmConfig.defaultModelID,
+            temperature: llmConfig.defaultTemperature,
+            contextStrategy: llmConfig.defaultContextStrategy
         )
 
-        active.messages.append(msg)
-        active.lastUsedAt = Date()
-        workspace.selectedConsoleSession = active
-        draftText = ""
+        Task {
+            await workspace.sendPrompt(composedText, in: session.id, config: config)
+        }
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct InspectorView: View {
     @EnvironmentObject private var vm: WorkspaceViewModel
+    @EnvironmentObject private var llmConfig: LLMConfigStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -15,9 +16,9 @@ struct InspectorView: View {
 
             // Session model config at the bottom of the inspector
             ConsoleSessionInspectorView(
-                modelID: $vm.consoleModelID,
-                temperature: $vm.consoleTemperature,
-                contextStrategy: $vm.consoleContextStrategy
+                modelID: $llmConfig.defaultModelID,
+                temperature: $llmConfig.defaultTemperature,
+                contextStrategy: $llmConfig.defaultContextStrategy
             )
         }
         .padding(12)
