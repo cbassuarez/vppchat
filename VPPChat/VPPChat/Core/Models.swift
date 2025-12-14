@@ -18,6 +18,12 @@ struct Session: Identifiable, Hashable {
     var createdAt: Date
     var updatedAt: Date
     var messages: [Message]
+
+    // 🔹 Sprint 2: per-session LLM configuration
+    var modelID: String = SessionDefaults.defaultModelID
+    var temperature: Double = SessionDefaults.defaultTemperature
+    var contextStrategy: LLMContextStrategy = SessionDefaults.defaultContextStrategy
+
 }
 
 struct Message: Identifiable, Hashable {

@@ -44,7 +44,7 @@ struct SettingsRoot: View {
       Group {
         switch pane {
         case .general:
-          paneCard(title: "General", lines: 6)
+               SettingsGeneralPane()
         case .motion:
           paneCard(title: "Motion", lines: 12)
         case .advanced:

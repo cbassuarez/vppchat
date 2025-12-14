@@ -53,6 +53,7 @@ struct StudioComposerView: View {
             modifiers: $modifiers,
             sources: $sources,
             runtime: vm.vppRuntime,
+            requestStatus: .idle,              // 👈 was: sendPhase: .idleDisabled
             sendAction: sendDraft,
             tagSelection: { tag in vm.vppRuntime.setTag(tag) },
             stepCycle: stepCycle,

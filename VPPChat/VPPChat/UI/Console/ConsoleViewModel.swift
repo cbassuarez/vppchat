@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 final class ConsoleViewModel: ObservableObject {
     @Published var session: ConsoleSession
@@ -15,6 +16,23 @@ final class ConsoleViewModel: ObservableObject {
     var messages: [ConsoleMessage] {
         get { session.messages }
         set { session.messages = newValue }
+    }
+
+    // 🔹 Sprint 2 – expose LLM config
+
+    var modelID: String {
+        get { session.modelID }
+        set { session.modelID = newValue }
+    }
+
+    var temperature: Double {
+        get { session.temperature }
+        set { session.temperature = min(1.0, max(0.0, newValue)) }
+    }
+
+    var contextStrategy: LLMContextStrategy {
+        get { session.contextStrategy }
+        set { session.contextStrategy = newValue }
     }
 
     // MARK: - Sending pipeline

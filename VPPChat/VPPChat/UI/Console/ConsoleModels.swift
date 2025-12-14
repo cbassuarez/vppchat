@@ -78,18 +78,30 @@ struct ConsoleSession: Identifiable, Equatable {
     var messages: [ConsoleMessage]
     var requestStatus: RequestStatus
 
+    // per-session LLM config
+    var modelID: String
+    var temperature: Double
+    var contextStrategy: LLMContextStrategy
+
     init(
         id: UUID = UUID(),
         title: String = "Session",
         createdAt: Date = Date(),
         messages: [ConsoleMessage] = [],
-        requestStatus: RequestStatus = .idle
+        requestStatus: RequestStatus = .idle,
+        modelID: String = SessionDefaults.defaultModelID,
+        temperature: Double = SessionDefaults.defaultTemperature,
+        contextStrategy: LLMContextStrategy = SessionDefaults.defaultContextStrategy
     ) {
         self.id = id
         self.title = title
         self.createdAt = createdAt
         self.messages = messages
         self.requestStatus = requestStatus
+
+        self.modelID = modelID
+        self.temperature = min(1.0, max(0.0, temperature))
+        self.contextStrategy = contextStrategy
     }
 
     var hasPendingAssistant: Bool {
@@ -100,3 +112,4 @@ struct ConsoleSession: Identifiable, Equatable {
         messages.last { $0.role == .user }
     }
 }
+

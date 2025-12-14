@@ -8,30 +8,49 @@ struct ConsoleShellView: View {
             SidebarView()
                 .environmentObject(appViewModel)
                 .frame(width: 260)
-
+            
             if let selected = appViewModel.selectedSession {
-                SessionView(session: selected, appViewModel: appViewModel)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(
-                        ZStack {
-                         
-                            // Milky aerogel tint
-                            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                                .fill(AppTheme.Colors.surface1)
+                HStack(spacing: 0) {
+                    // Main console pane
+                    SessionView(session: selected, appViewModel: appViewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                            // Soft border
-                            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                                .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                        }
+                    // 🔹 Session inspector (260pt rail on the right)
+                    ConsoleSessionInspectorView(
+                        modelID: appViewModel.binding(
+                            for: selected.id,
+                            keyPath: \Session.modelID,
+                            default: selected.modelID
+                        ),
+                        temperature: appViewModel.binding(
+                            for: selected.id,
+                            keyPath: \Session.temperature,
+                            default: selected.temperature
+                        ),
+                        contextStrategy: appViewModel.binding(
+                            for: selected.id,
+                            keyPath: \Session.contextStrategy,
+                            default: selected.contextStrategy
+                        )
                     )
-                    // 🔑 Clip the ENTIRE panel (including SessionView content) to the same radius
-                    .clipShape(
+                    .frame(width: 260)
+                    .padding(.leading, 12)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    ZStack {
                         RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                    )
+                            .fill(AppTheme.Colors.surface1)
+                        RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                            .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                    }
+                )
+                .clipShape(
+                    RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                )
             } else {
                 consolePlaceholder
             }
-
         }
     }
 

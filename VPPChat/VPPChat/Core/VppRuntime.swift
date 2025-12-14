@@ -102,7 +102,7 @@ final class VppRuntime: ObservableObject {
         return "[" + parts.joined(separator: " | ") + "]"
     }
 
-    struct VppValidationResult {
+    struct VppValidationResult: Equatable {
         var isValid: Bool
         var issues: [String]
     }

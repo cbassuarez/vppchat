@@ -6,8 +6,7 @@ struct ComposerView: View {
     @Binding var sources: VppSources
 
     @ObservedObject var runtime: VppRuntime
-    /// Controlled by the Console layer.
-    let sendPhase: SendPhase = .idleDisabled
+    var requestStatus: RequestStatus
     var sendAction: () -> Void
     var tagSelection: (VppTag) -> Void
     var stepCycle: () -> Void
@@ -15,10 +14,25 @@ struct ComposerView: View {
 
     @State private var isQualityExpanded = false
     @EnvironmentObject private var theme: ThemeManager
+
+    // Tags that may be used as echo targets with !<e> --<tag>
+    private let echoableTags: Set<VppTag> = [.g, .q, .o, .c]
+
     private var trimmedDraft: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    private let echoableTags: Set<VppTag> = [.g, .q, .o, .c]
+
+    private var sendPhase: SendPhase {
+        switch requestStatus {
+        case .inFlight:
+            return .sending
+        case .error:
+            // Visually shows “Retry”, but actual retry is via the error card for now.
+            return .error
+        case .idle:
+            return trimmedDraft.isEmpty ? .idleDisabled : .idleReady
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.base * 1.25) {
@@ -37,15 +51,17 @@ struct ComposerView: View {
                 )
                 .shadow(color: .black.opacity(0.20), radius: 6, x: 6, y: 6)
         )
-        .animation(.spring(response: AppTheme.Motion.medium,
-                           dampingFraction: 0.85,
-                           blendDuration: 0.2),
-                   value: isQualityExpanded)
+        .animation(
+            .spring(response: AppTheme.Motion.medium,
+                    dampingFraction: 0.85,
+                    blendDuration: 0.2),
+            value: isQualityExpanded
+        )
     }
 
     // MARK: - Bands
 
-    // Top: cycle, assumptions, locus, sources
+    // Top: cycle (read-only), assumptions, locus, sources
     private var metaBand: some View {
         HStack(spacing: AppTheme.Spacing.base * 1.5) {
             // Cycle + assumptions cluster
@@ -67,7 +83,7 @@ struct ComposerView: View {
                     .clipShape(Capsule())
                 }
 
-                // Assumptions as discrete chips (unchanged)
+                // Assumptions as discrete chips
                 HStack(spacing: 6) {
                     Text("ASSUMPTIONS")
                         .font(.system(size: 10, weight: .semibold))
@@ -114,7 +130,7 @@ struct ComposerView: View {
                     .background(AppTheme.Colors.surface0)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                    // Sources cluster - unchanged
+                    // Sources cluster
                     HStack(spacing: 4) {
                         sourceChip("None", isSelected: sources == .none) {
                             sources = .none
@@ -130,7 +146,7 @@ struct ComposerView: View {
         }
     }
 
-    // Tag row just above editor
+    // Tag row just above editor — inline E / echo behavior is handled via handleTagTap(_:)
     private var tagBand: some View {
         HStack {
             TagChipsView(
@@ -139,59 +155,6 @@ struct ComposerView: View {
                 onSelect: handleTagTap(_:)
             )
             Spacer()
-        }
-    }
-
-
-    /// Tags you can reasonably echo *to* when using !<e> --<tag>.
-    /// Adjust if you want to allow fewer/more destinations.
-    private var echoTargetTags: [VppTag] {
-        [.g, .q, .o, .c, .e_o]
-    }
-
-    private var echoTargetRow: some View {
-        HStack(spacing: 6) {
-            Text("Echo to")
-                .font(.system(size: 10, weight: .semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(AppTheme.Colors.textSubtle)
-
-            ForEach(echoTargetTags, id: \.self) { tag in
-                let isSelected = (modifiers.echoTarget == tag)
-
-                Button {
-                    modifiers.echoTarget = tag
-                } label: {
-                    Text(tagLabel(tag))
-                        .font(.system(size: 10, weight: .semibold))
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(
-                                    isSelected
-                                    ? echoAccent(for: tag).opacity(0.18)
-                                    : AppTheme.Colors.surface0.opacity(0.8)
-                                )
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(
-                                    isSelected
-                                    ? echoAccent(for: tag)
-                                    : AppTheme.Colors.borderSoft,
-                                    lineWidth: isSelected ? 1.2 : 1.0
-                                )
-                        )
-                        .foregroundStyle(
-                            isSelected
-                            ? AppTheme.Colors.textPrimary
-                            : AppTheme.Colors.textSecondary
-                        )
-                }
-                .buttonStyle(.plain)
-            }
         }
     }
 
@@ -307,23 +270,19 @@ struct ComposerView: View {
     // MARK: - Send
 
     private var sendButton: some View {
-        let isEnabled: Bool
-        switch sendPhase {
-        case .idleReady:
-            isEnabled = true
-        default:
-            isEnabled = false
-        }
+        let isEnabled = (sendPhase == .idleReady)
 
         return SendButton(
             phase: sendPhase,
             isEnabled: isEnabled,
             action: sendAction
         )
-        .fixedSize() // 👈 keep it compact; no full-width expansion
+        .fixedSize()
         .keyboardShortcut(.return, modifiers: [.command])
     }
-    
+
+    // MARK: - Tag handling (E / echo behavior)
+
     /// Inline E / echo behavior:
     /// - Normal: one primary tag.
     /// - If primary is E, we also use `modifiers.echoTarget` as `--<tag>`.
@@ -483,27 +442,6 @@ struct ComposerView: View {
                 .foregroundStyle(selected ? textColor : AppTheme.Colors.textSecondary)
         }
         .buttonStyle(.plain)
-    }
-    
-    private func echoAccent(for tag: VppTag) -> Color {
-        switch tag {
-        case .e, .e_o:
-            return AppTheme.Colors.exceptionAccent
-        default:
-            return AppTheme.Colors.structuralAccent
-        }
-    }
-
-    private func tagLabel(_ tag: VppTag) -> String {
-        switch tag {
-        case .g:   return "G"
-        case .q:   return "Q"
-        case .o:   return "O"
-        case .c:   return "C"
-        case .o_f: return "O_F"
-        case .e:   return "E"
-        case .e_o: return "E_O"
-        }
     }
 
     private func severityChip(

@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 
 // AppViewModel coordinates global app state, selection, and shared services.
 final class AppViewModel: ObservableObject {
@@ -59,5 +60,28 @@ final class AppViewModel: ObservableObject {
     func createNewFolder(named name: String) {
         let folder = store.createFolder(name: name)
         selectedFolderID = folder.id
+    }
+}
+
+extension AppViewModel {
+    /// Generic binding into a Session's property by ID (for Console inspectors).
+    func binding<Value>(
+        for sessionID: Session.ID,
+        keyPath: WritableKeyPath<Session, Value>,
+        default defaultValue: Value
+    ) -> Binding<Value> {
+        Binding(
+            get: {
+                // Look up the live session in the store
+                self.store.sessions.first(where: { $0.id == sessionID })?[keyPath: keyPath]
+                ?? defaultValue
+            },
+            set: { newValue in
+                guard let index = self.store.sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+                self.store.sessions[index][keyPath: keyPath] = newValue
+                // Make sure views depending on AppViewModel update
+                self.objectWillChange.send()
+            }
+        )
     }
 }
