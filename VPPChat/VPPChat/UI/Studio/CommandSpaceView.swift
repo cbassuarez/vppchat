@@ -7,7 +7,7 @@ struct CommandSpaceView: View {
     @State private var query: String = ""
     @State private var isHovering: Bool = false
     @State private var selectionIndex: Int = 0
-
+    @FocusState private var isSearchFocused: Bool
     private var items: [CommandSpaceItem] {
         vm.commandSpaceItems(for: query)
     }
@@ -53,26 +53,11 @@ struct CommandSpaceView: View {
                 selectionIndex = min(selectionIndex, newValue.count - 1)
             }
         }
-#if os(macOS)
-        .onKeyPress(.upArrow) { _ in
-            moveSelection(delta: -1)
-            return .handled
-        }
-        .onKeyPress(.downArrow) { _ in
-            moveSelection(delta: 1)
-            return .handled
-        }
-        .onKeyPress(.return) { _ in
-            executeSelectedItem()
-            return .handled
-        }
-        .onKeyPress(.escape) { _ in
-            withAnimation(AppTheme.Motion.commandSpace) {
-                vm.isCommandSpaceVisible = false
-            }
-            return .handled
-        }
-#endif
+        .onAppear {
+       #if os(macOS)
+                   isSearchFocused = true       // 👈 auto-focus search when Command Space opens
+       #endif
+               }
     }
 
     private var header: some View {
@@ -113,7 +98,6 @@ struct CommandSpaceView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
-                // Blur + tint, both clipped to the same rounded rect
                 .ultraThinMaterial.opacity(0.5),
                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
@@ -122,6 +106,27 @@ struct CommandSpaceView: View {
                     .fill(AppTheme.Colors.surface0)
             )
             .foregroundStyle(StudioTheme.Colors.textPrimary)
+    #if os(macOS)
+            .focused($isSearchFocused)   // 👈 make the TextField the focused view for key events
+            .onKeyPress(.upArrow) {
+                moveSelection(delta: -1)
+                return .handled
+            }
+            .onKeyPress(.downArrow) {
+                moveSelection(delta: 1)
+                return .handled
+            }
+            .onKeyPress(.return) {
+                executeSelectedItem()
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                withAnimation(AppTheme.Motion.commandSpace) {
+                    vm.isCommandSpaceVisible = false
+                }
+                return .handled
+            }
+    #endif
     }
 
     @ViewBuilder

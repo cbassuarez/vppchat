@@ -150,6 +150,12 @@ struct VPPChatApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
         
+#if os(macOS)
+        .commands {
+            WorkspaceCommands(workspaceViewModel: workspaceViewModel)
+        }
+#endif
+        
         Settings {
             SettingsRoot()
                 .windowResizeAnchorCompat(.trailing)
