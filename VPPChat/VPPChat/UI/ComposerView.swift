@@ -12,7 +12,7 @@ struct ComposerView: View {
     var stepCycle: () -> Void
     var resetCycle: () -> Void
     var focusBinding: FocusState<Bool>.Binding? = nil
-
+    @FocusState private var isEditorFocused: Bool
     @State private var isQualityExpanded = false
     @EnvironmentObject private var theme: ThemeManager
 
@@ -160,17 +160,31 @@ struct ComposerView: View {
                     .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
             )
             .overlay(
-                TextEditor(text: $draft)
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(AppTheme.Colors.textPrimary)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .focused(focusBinding)
-                    .padding(.horizontal, AppTheme.Spacing.cardInner)
-                    .padding(.vertical, AppTheme.Spacing.base * 1.2)
+                Group {
+                    if let focusBinding {
+                        TextEditor(text: $draft)
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                            .scrollContentBackground(.hidden)
+                            .background(Color.clear)
+                            .focused(focusBinding)   // 👈 only when provided
+                            .padding(.horizontal, AppTheme.Spacing.cardInner)
+                            .padding(.vertical, AppTheme.Spacing.base * 1.2)
+                    } else {
+                        TextEditor(text: $draft)
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundStyle(AppTheme.Colors.textPrimary)
+                            .scrollContentBackground(.hidden)
+                            .background(Color.clear)
+                            .focused($isEditorFocused)   // 👈 local fallback
+                            .padding(.horizontal, AppTheme.Spacing.cardInner)
+                            .padding(.vertical, AppTheme.Spacing.base * 1.2)
+                    }
+                }
             )
             .frame(minHeight: 110, maxHeight: 200)
     }
+
 
     // Bottom: correctness/severity drawer + send button
     private var actionBand: some View {

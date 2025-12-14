@@ -7,26 +7,46 @@ struct MessageListView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.base * 1.5) {
+            LazyVStack(
+                alignment: .leading,
+                spacing: AppTheme.Spacing.base * 1.5
+            ) {
                 ForEach(messages) { message in
-                    ConsoleMessageRow(message: message, sessionID: sessionID, onRetry: onRetry)
-                        .padding(.horizontal, AppTheme.Spacing.outerHorizontal)
-                        .transition(.asymmetric(
+                    ConsoleMessageRow(
+                        message: message,
+                        sessionID: sessionID,
+                        onRetry: onRetry
+                    )
+                    // 👇 extra breathing room around each bubble so shadows
+                    // and any subtle scaling don’t get clipped by the container
+                    .padding(.horizontal, AppTheme.Spacing.outerHorizontal + 12)
+                    .padding(.vertical, 4)
+                    .transition(
+                        .asymmetric(
                             insertion: AnyTransition.opacity
                                 .combined(with: .move(edge: .bottom))
-                                .combined(with: .modifier(
-                                    active: BlurModifier(radius: 10),
-                                    identity: BlurModifier(radius: 0)
-                                )),
+                                .combined(
+                                    with: .modifier(
+                                        active: BlurModifier(radius: 10),
+                                        identity: BlurModifier(radius: 0)
+                                    )
+                                ),
                             removal: .opacity
-                        ))
-                        .animation(.easeOut(duration: AppTheme.Motion.fast), value: messages.count)
+                        )
+                    )
+                    .animation(
+                        .easeOut(duration: AppTheme.Motion.fast),
+                        value: messages.count
+                    )
                 }
             }
+            // 👇 small inset so the outermost shadows don’t kiss the panel radius
             .padding(.vertical, AppTheme.Spacing.base)
+            .padding(.horizontal, 12)
         }
     }
 }
+
 
 // A simple blur modifier to use in transitions.
 struct BlurModifier: ViewModifier {

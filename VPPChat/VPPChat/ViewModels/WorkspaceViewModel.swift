@@ -8,6 +8,13 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var selectedTrackID: Track.ID?
     @Published var selectedSceneID: Scene.ID?
 
+    // Session model configuration (Console + Studio Inspector share this)
+    @Published var consoleModelID: String =
+        LLMModelCatalog.presets.first?.id ?? ""
+    @Published var consoleTemperature: Double = 0.4
+    @Published var consoleContextStrategy: LLMContextStrategy =
+        LLMContextStrategy.allCases.first!
+    
     // Shell coordination
     @Published var currentShellMode: ShellMode = .atlas
     var switchToShell: ((ShellMode) -> Void)?

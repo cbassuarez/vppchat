@@ -12,7 +12,7 @@ struct StudioView: View {
         VStack(spacing: 14) {
             header
 
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: 16) {
                 TracksRailView()
                     .environmentObject(vm)
                     .frame(width: 240)
@@ -20,15 +20,19 @@ struct StudioView: View {
                 if let scene = vm.selectedScene {
                     SceneCanvasView(scene: scene)
                         .environmentObject(vm)
+                        .padding(.horizontal, 2) // tiny breathing room
                 } else {
                     placeholder
                 }
 
                 InspectorView()
                     .frame(width: 260)
+                    .padding(.leading, 4)   // keep the inspector’s card/shadow off the canvas edge
             }
-            .padding(12)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
             .panelBackground()
+
         }
         .padding(18)
     }

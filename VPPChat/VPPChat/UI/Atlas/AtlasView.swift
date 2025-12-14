@@ -79,23 +79,23 @@ struct AtlasView: View {
             }
         }
 #if os(macOS)
-        .onKeyPress(.upArrow) { _ in
+        .onKeyPress(.upArrow) {
             moveSelection(delta: -1)
             return .handled
         }
-        .onKeyPress(.downArrow) { _ in
+        .onKeyPress(.downArrow) {
             moveSelection(delta: 1)
             return .handled
         }
-        .onKeyPress(.leftArrow) { _ in
+        .onKeyPress(.leftArrow) {
             moveSelection(delta: -1)
             return .handled
         }
-        .onKeyPress(.rightArrow) { _ in
+        .onKeyPress(.rightArrow) {
             moveSelection(delta: 1)
             return .handled
         }
-        .onKeyPress(.return) { _ in
+        .onKeyPress(.return) {
             openSelectedBlock()
             return .handled
         }
@@ -322,9 +322,11 @@ struct AtlasView: View {
                                 openBlock(block)
                             }
                     }
-                    .padding(.bottom, 8)
+                    .padding(8)
                 }
-                .padding(.vertical, 8)
+                // 👇 Slightly more vertical padding around the grid as a whole
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
             }
         }
     }

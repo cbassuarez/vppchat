@@ -142,7 +142,7 @@ private struct ConsoleSessionView: View {
             .padding(.bottom, 12)
         }
         .navigationTitle(session.title)
-        .background(NoiseBackground())
+        .background(AppTheme.Colors.surface2)
         .onReceive(workspace.$focusConsoleComposerToken) { token in
             guard token != lastComposerFocusToken else { return }
             lastComposerFocusToken = token
