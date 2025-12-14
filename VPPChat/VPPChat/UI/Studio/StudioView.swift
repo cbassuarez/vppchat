@@ -28,16 +28,7 @@ struct StudioView: View {
                     .frame(width: 260)
             }
             .padding(12)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
-                        .fill(AppTheme.Colors.surface0)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: StudioTheme.Radii.panel, style: .continuous)
-                                .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
-                        )
-                }
-            )
+            .panelBackground()
         }
         .padding(18)
     }
