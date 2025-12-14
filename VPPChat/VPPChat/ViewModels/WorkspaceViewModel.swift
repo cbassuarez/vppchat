@@ -673,3 +673,92 @@ extension WorkspaceViewModel {
         return store.scene(id: scene.id)
     }
 }
+
+// MARK: - LLM send pipeline
+
+extension WorkspaceViewModel {
+    struct LLMRequestConfig {
+        var modelID: String
+        var temperature: Double
+        var contextStrategy: LLMContextStrategy
+    }
+
+    @MainActor
+    func sendPrompt(
+        _ text: String,
+        in sessionID: ConsoleSession.ID,
+        config: LLMRequestConfig,
+        llmConfigStore: LLMConfigStore = .shared
+    ) async {
+        guard let index = consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+
+        var session = consoleSessions[index]
+        let timestamp = Date()
+
+        let userMessage = ConsoleMessage(
+            role: .user,
+            text: text,
+            createdAt: timestamp,
+            state: .normal
+        )
+        let pendingMessage = ConsoleMessage(
+            role: .assistant,
+            text: "",
+            createdAt: timestamp,
+            state: .pending
+        )
+
+        session.messages.append(userMessage)
+        session.messages.append(pendingMessage)
+        session.lastUsedAt = Date()
+        session.requestStatus = .inFlight
+        consoleSessions[index] = session
+
+        let requestMessages: [LLMMessage] = session.messages.map { message in
+            let role: LLMRole
+            switch message.role {
+            case .system: role = .system
+            case .user: role = .user
+            case .assistant: role = .assistant
+            }
+            return LLMMessage(id: message.id, role: role, content: message.text)
+        }
+
+        let request = LLMRequest(
+            modelID: config.modelID,
+            temperature: config.temperature,
+            contextStrategy: config.contextStrategy,
+            messages: requestMessages
+        )
+
+        let client = LLMClientFactory.makeClient(config: llmConfigStore)
+
+        do {
+            let response = try await client.send(request)
+
+            guard let latestIndex = consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+            var latestSession = consoleSessions[latestIndex]
+
+            if let pendingIndex = latestSession.messages.firstIndex(where: { $0.id == pendingMessage.id }) {
+                latestSession.messages[pendingIndex].text = response.text
+                latestSession.messages[pendingIndex].state = .normal
+                latestSession.messages[pendingIndex].vppValidation = vppRuntime.validateAssistantReply(response.text)
+            }
+
+            latestSession.requestStatus = .idle
+            consoleSessions[latestIndex] = latestSession
+
+            vppRuntime.ingestFooterLine(response.text)
+        } catch {
+            guard let latestIndex = consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+            var latestSession = consoleSessions[latestIndex]
+
+            if let pendingIndex = latestSession.messages.firstIndex(where: { $0.id == pendingMessage.id }) {
+                latestSession.messages[pendingIndex].state = .error(message: error.localizedDescription)
+            }
+
+            latestSession.requestStatus = .error(message: error.localizedDescription)
+            consoleSessions[latestIndex] = latestSession
+        }
+    }
+}

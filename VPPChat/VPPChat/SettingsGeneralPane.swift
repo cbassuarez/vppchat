@@ -12,16 +12,10 @@
 import SwiftUI
 
 struct SettingsGeneralPane: View {
-    @AppStorage("vppchat.defaultModelID") private var defaultModelID: String = SessionDefaults.defaultModelID
-    @AppStorage("vppchat.defaultTemperature") private var defaultTemperature: Double = SessionDefaults.defaultTemperature
-    @AppStorage("vppchat.defaultContextStrategy") private var defaultContextRaw: String = SessionDefaults.defaultContextStrategy.rawValue
-
-    private var defaultContextStrategy: LLMContextStrategy {
-        LLMContextStrategy(rawValue: defaultContextRaw) ?? .compact
-    }
+    @EnvironmentObject private var llmConfig: LLMConfigStore
 
     private var selectedPreset: LLMModelPreset {
-        LLMModelCatalog.preset(for: defaultModelID)
+        LLMModelCatalog.preset(for: llmConfig.defaultModelID)
     }
 
     var body: some View {
@@ -36,7 +30,7 @@ struct SettingsGeneralPane: View {
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.Colors.textSubtle)
 
-                Picker("Default Model", selection: $defaultModelID) {
+                Picker("Default Model", selection: $llmConfig.defaultModelID) {
                     ForEach(LLMModelCatalog.presets) { preset in
                         Text(preset.label).tag(preset.id)
                     }
@@ -60,18 +54,17 @@ struct SettingsGeneralPane: View {
 
                     Spacer()
 
-                    Text(String(format: "%.2f", defaultTemperature))
+                    Text(String(format: "%.2f", llmConfig.defaultTemperature))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(AppTheme.Colors.textSecondary)
                 }
 
                 Slider(
                     value: Binding(
-                        get: { defaultTemperature },
+                        get: { llmConfig.defaultTemperature },
                         set: { newValue in
                             let clamped = min(1.0, max(0.0, newValue))
-                            defaultTemperature = clamped
-                            SessionDefaults.defaultTemperature = clamped
+                            llmConfig.defaultTemperature = clamped
                         }
                     ),
                     in: 0.0...1.0
@@ -87,11 +80,9 @@ struct SettingsGeneralPane: View {
                     .foregroundStyle(AppTheme.Colors.textSubtle)
 
                 Picker("", selection: Binding(
-                    get: { defaultContextStrategy },
+                    get: { llmConfig.defaultContextStrategy },
                     set: { newValue in
-                        // Write through to the underlying @AppStorage-backed raw value
-                        defaultContextRaw = newValue.rawValue
-                        SessionDefaults.defaultContextStrategy = newValue
+                        llmConfig.defaultContextStrategy = newValue
                     }
                 )) {
                     ForEach(LLMContextStrategy.allCases) { strategy in
@@ -100,7 +91,7 @@ struct SettingsGeneralPane: View {
                 }
                 .pickerStyle(.segmented)
 
-                Text(defaultContextStrategy.hint)
+                Text(llmConfig.defaultContextStrategy.hint)
                     .font(.system(size: 11))
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }

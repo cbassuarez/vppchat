@@ -44,7 +44,19 @@ struct SettingsRoot: View {
       Group {
         switch pane {
         case .general:
-               SettingsGeneralPane()
+          ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+              Text("LLM")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppTheme.Colors.textPrimary)
+
+              LLMSettingsPanel()
+
+              SettingsGeneralPane()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+          }
         case .motion:
           paneCard(title: "Motion", lines: 12)
         case .advanced:
@@ -82,6 +94,7 @@ struct VPPChatApp: App {
     @StateObject private var appViewModel = AppViewModel()
     @StateObject private var workspaceViewModel = WorkspaceViewModel()
     @StateObject private var themeManager = ThemeManager()
+    @StateObject private var llmConfig = LLMConfigStore.shared
     
     @State private var shellMode: ShellMode
     private let shellModeKey = "vppchat.shell.lastMode"
@@ -141,6 +154,7 @@ struct VPPChatApp: App {
             .environmentObject(appViewModel)
             .environmentObject(workspaceViewModel)
             .environmentObject(themeManager)
+            .environmentObject(llmConfig)
             .animation(
                 .easeInOut(duration: AppTheme.Motion.medium),
                 value: workspaceViewModel.isCommandSpaceVisible
@@ -166,6 +180,7 @@ struct VPPChatApp: App {
                 .environmentObject(appViewModel)
                 .environmentObject(workspaceViewModel)
                 .environmentObject(themeManager)
+                .environmentObject(llmConfig)
         }
     }
 }
