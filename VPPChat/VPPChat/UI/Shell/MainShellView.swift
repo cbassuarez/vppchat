@@ -6,6 +6,7 @@ struct MainShellView: View {
     @EnvironmentObject private var appVM: AppViewModel
     @EnvironmentObject private var workspaceVM: WorkspaceViewModel
     @EnvironmentObject private var theme: ThemeManager
+    @Environment(\.shellModeBinding) private var shellModeBinding
 
     @Namespace private var modeUnderline
 
@@ -48,49 +49,17 @@ struct MainShellView: View {
     }
 
     private func sendToConsole(_ block: Block) {
-        // Decide which folder to put the new session in
-        guard let folder = appVM.selectedFolder ?? appVM.store.folders.first else {
-            return
-        }
+        guard
+            let scene = workspaceVM.store.scene(id: block.sceneID),
+            let track = workspaceVM.store.track(id: scene.trackID),
+            let project = workspaceVM.store.project(id: track.projectID)
+        else { return }
 
-        // Create a new session; AppViewModel is responsible for updating selectedSessionID
-        appVM.createNewSession(in: folder)
-
-        // Grab the ID of the newly selected session
-        guard let sessionID = appVM.selectedSessionID else {
-            return
-        }
-
-        // Build snippet from the block
-        let snippet: String
-        if let text = block.documentText, !text.isEmpty {
-            snippet = text
-        } else if let lastMessage = block.messages.last {
-            snippet = lastMessage.body
-        } else {
-            snippet = block.title
-        }
-
-        let body = "[ATLAS] \(block.title)\n\n\(snippet)"
-
-        let message = Message(
-            id: UUID(),
-            isUser: true,
-            timestamp: .now,
-            body: body,
-            tag: .g,
-            cycleIndex: 1,
-            assumptions: 0,
-            sources: .none,
-            locus: "Atlas",
-            isValidVpp: true,
-            validationIssues: []
-        )
-
-        appVM.store.appendMessage(message, to: sessionID)
+        let session = workspaceVM.openConsole(for: block, project: project, track: track, scene: scene)
+        workspaceVM.touchConsoleSession(session.id)
 
         withAnimation(.spring(response: AppTheme.Motion.medium, dampingFraction: 0.85)) {
-            mode = .console
+            shellModeBinding?.wrappedValue = .console
         }
     }
 }

@@ -100,6 +100,7 @@ struct VPPChatApp: App {
 
                 // Main shell (Console / Atlas / Studio)
                 MainShellView(mode: $shellMode)
+                    .environment(\.shellModeBinding, $shellMode)
 
                 // 🔴 Single global dim + Command Space overlay
                 if workspaceViewModel.isCommandSpaceVisible {
