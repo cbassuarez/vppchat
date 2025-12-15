@@ -8,7 +8,7 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var selectedProjectID: Project.ID?
     @Published var selectedTrackID: Track.ID?
     @Published var selectedSceneID: Scene.ID?
-
+    @Published var selectedBlockID: Block.ID?
     // Session model configuration (Console + Studio Inspector share this)
     @Published var consoleModelID: String =
         LLMModelCatalog.presets.first?.id ?? ""
@@ -46,19 +46,66 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var vppRuntime: VppRuntime
 
     private var cancellables: Set<AnyCancellable> = []
+    private var autoReplyTask: Task<Void, Never>?
+        private var autoRepliedUserMessageIDs: Set<UUID> = []
+        private var isAutoReplyRunning: Bool = false
+    
+        private func scheduleAutoReplyScan() {
+            autoReplyTask?.cancel()
+            autoReplyTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                await self?.autoReplyIfNeeded()
+            }
+        }
+    
+        @MainActor
+        private func autoReplyIfNeeded() async {
+            guard !isAutoReplyRunning else { return }
+            isAutoReplyRunning = true
+            defer { isAutoReplyRunning = false }
+    
+            let cfg = LLMRequestConfig(
+                modelID: consoleModelID,
+                temperature: consoleTemperature,
+                contextStrategy: consoleContextStrategy
+            )
+    
+            for block in store.allBlocksSortedByUpdatedAtDescending().filter({ $0.kind == .conversation }) {
+                guard let last = block.messages.last, last.isUser else { continue }
+                if autoRepliedUserMessageIDs.contains(last.id) { continue }
+    
+                if let s = consoleSessions.first(where: { $0.id == block.id }),
+                   case .inFlight = s.requestStatus {
+                    continue
+                }
+    
+                autoRepliedUserMessageIDs.insert(last.id)
+                await sendPrompt(
+                    last.body,
+                    in: block.id,
+                    config: cfg,
+                    existingUserMessageID: last.id
+                )
+            }
+        }
 
     init(store: WorkspaceStore = WorkspaceStore(), runtime: VppRuntime = VppRuntime(state: .default)) {
         self.store = store
         self.vppRuntime = runtime
 
         store.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
-            .store(in: &cancellables)
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    guard let self else { return }
+                    self.objectWillChange.send()
+                    DispatchQueue.main.async { [weak self] in
+                        self?.syncConsoleSessionsFromBlocks()
+                        self?.scheduleAutoReplyScan()
+                    }
+                }
+                .store(in: &cancellables)
 
-        if let project = store.allProjects.first {
+        if let project = store.allProjects.first(where: { $0.name == "Getting Started" }) ?? store.allProjects.first {
             selectedProjectID = project.id
             if let trackID = project.tracks.first,
                let track = store.track(id: trackID),
@@ -73,13 +120,16 @@ final class WorkspaceViewModel: ObservableObject {
 
     /// Ensure there is at least one console session and that selectedSessionID is set.
     func ensureDefaultConsoleSession() {
+        syncConsoleSessionsFromBlocks()
         if consoleSessions.isEmpty {
-            let session = ConsoleSession(title: "Session 1")
-            consoleSessions = [session]
-            selectedSessionID = session.id
-        } else if selectedSessionID == nil {
-            selectedSessionID = consoleSessions.first?.id
-        }
+            let welcome = store.ensureWelcomeConversationSeeded()
+                syncConsoleSessionsFromBlocks()
+                selectedSessionID = welcome.id
+                return
+            }
+            if selectedSessionID == nil {
+                selectedSessionID = WorkspaceStore.canonicalWelcomeBlockID
+            }
     }
 
     /// Create a new console session (optionally linked to a root block) and select it.
@@ -126,18 +176,39 @@ final class WorkspaceViewModel: ObservableObject {
         )
 
         // 1. If a session is already rooted at this block, reuse it.
-        if let existing = consoleSessions.first(where: {
-            $0.rootBlock?.blockID == path.blockID
-        }) {
-            touchConsoleSession(existing.id)
-            selectedSessionID = existing.id
-            return existing
-        }
-
-        // 2. Otherwise, create a fresh session, using the block title as label.
-        let title = block.title.isEmpty ? project.name : block.title
-        let session = newConsoleSession(title: title, rootBlock: path)
-        return session
+        // ✅ 1:1 mapping: the ConsoleSession *is* the conversation Block
+            if let idx = consoleSessions.firstIndex(where: { $0.id == block.id }) {
+                consoleSessions[idx].rootBlock = path
+                touchConsoleSession(block.id)
+                selectedSessionID = block.id
+                return consoleSessions[idx]
+            }
+        
+            let seeded = ConsoleSession(
+                id: block.id,
+                title: block.title,
+                createdAt: block.createdAt,
+                lastUsedAt: block.updatedAt,
+                rootBlock: path,
+                messages: block.messages.map { m in
+                    ConsoleMessage(
+                        id: m.id,
+                        role: m.isUser ? .user : .assistant,
+                        text: m.body,
+                        createdAt: m.timestamp,
+                        state: .normal,
+                        vppValidation: m.isUser ? nil : VppRuntime.VppValidationResult(isValid: m.isValidVpp, issues: m.validationIssues),
+                        linkedSessionID: block.id
+                    )
+                },
+                requestStatus: .idle,
+                modelID: consoleModelID,
+                temperature: consoleTemperature,
+                contextStrategy: consoleContextStrategy
+            )
+            consoleSessions.insert(seeded, at: 0)
+            selectedSessionID = seeded.id
+            return seeded
     }
 
     struct SaveBlockSelection {
@@ -186,6 +257,7 @@ final class WorkspaceViewModel: ObservableObject {
         selectedProjectID = link.projectID
         selectedTrackID = link.trackID
         selectedSceneID = link.sceneID
+        selectedBlockID = link.blockID
     }
 
     var selectedProject: Project? {
@@ -266,6 +338,7 @@ final class WorkspaceViewModel: ObservableObject {
         selectedProjectID = project.id
         selectedTrackID = track.id
         selectedSceneID = scene.id
+        selectedBlockID = block.id
     }
 }
 
@@ -683,6 +756,85 @@ extension WorkspaceViewModel {
         var temperature: Double
         var contextStrategy: LLMContextStrategy
     }
+    @MainActor
+    func syncConsoleSessionsFromBlocks() {
+        let convoBlocks = store
+            .allBlocksSortedByUpdatedAtDescending()
+            .filter { $0.kind == .conversation }
+
+        // Upsert ConsoleSession for each conversation block (stable ID == block.id)
+        for block in convoBlocks {
+            if let idx = consoleSessions.firstIndex(where: { $0.id == block.id }) {
+                // keep title + seed messages if missing
+                consoleSessions[idx].title = block.title
+                // ✅ if not actively sending, keep session transcript in lockstep with the block
+                            if case .inFlight = consoleSessions[idx].requestStatus {
+                                // keep local pending placeholder while request is in flight
+                            } else {
+                                consoleSessions[idx].messages = block.messages.map { m in
+                                    ConsoleMessage(
+                                        id: m.id,
+                                        role: m.isUser ? .user : .assistant,
+                                        text: m.body,
+                                        createdAt: m.timestamp,
+                                        state: .normal,
+                                        vppValidation: m.isUser ? nil : VppRuntime.VppValidationResult(isValid: m.isValidVpp, issues: m.validationIssues),
+                                        linkedSessionID: block.id
+                                    )
+                                }
+                            }
+                consoleSessions[idx].lastUsedAt = max(consoleSessions[idx].lastUsedAt, block.updatedAt)
+            } else {
+                let seeded = ConsoleSession(
+                    id: block.id,
+                    title: block.title,
+                    createdAt: block.createdAt,
+                    lastUsedAt: block.updatedAt,
+                    rootBlock: nil,
+                    messages: block.messages.map { m in
+                        ConsoleMessage(
+                            id: m.id,
+                            role: m.isUser ? .user : .assistant,
+                            text: m.body,
+                            createdAt: m.timestamp,
+                            state: .normal,
+                            vppValidation: m.isUser ? nil : VppRuntime.VppValidationResult(isValid: m.isValidVpp, issues: m.validationIssues),
+                            linkedSessionID: block.id
+                        )
+                    },
+                    requestStatus: .idle,
+                    modelID: SessionDefaults.defaultModelID,
+                    temperature: SessionDefaults.defaultTemperature,
+                    contextStrategy: SessionDefaults.defaultContextStrategy
+                )
+                consoleSessions.insert(seeded, at: 0)
+            }
+        }
+    }
+
+    @MainActor
+    private func upsertConsoleSessionIndex(for sessionID: ConsoleSession.ID) -> Int {
+        if let idx = consoleSessions.firstIndex(where: { $0.id == sessionID }) {
+            return idx
+        }
+
+        // Seed so Studio/Atlas sends don't silently no-op.
+        // Title will be refined later once we bind this to a Block/Scene hierarchy.
+        let seeded = ConsoleSession(
+            id: sessionID,
+            title: "Session",
+            createdAt: Date(),
+            lastUsedAt: Date(),
+            rootBlock: nil,
+            messages: [],
+            requestStatus: .idle,
+            modelID: SessionDefaults.defaultModelID,
+            temperature: SessionDefaults.defaultTemperature,
+            contextStrategy: SessionDefaults.defaultContextStrategy
+        )
+        consoleSessions.insert(seeded, at: 0)
+        return 0
+    }
 
     @MainActor
     func sendPrompt(
@@ -690,14 +842,25 @@ extension WorkspaceViewModel {
         in sessionID: ConsoleSession.ID,
         config: LLMRequestConfig,
         assumptions: AssumptionsConfig = .none,          // ✅ add
-        llmConfigStore: LLMConfigStore = .shared
+    llmConfigStore: LLMConfigStore = .shared,
+        existingUserMessageID: UUID? = nil
     ) async {
-        guard let index = consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }
-
+        let index = upsertConsoleSessionIndex(for: sessionID)
         var session = consoleSessions[index]
         let timestamp = Date()
-
+        // ✅ Replies should persist into the *conversation block*:
+            // - if this session is "about" a studio block, use that blockID
+            // - otherwise, the sessionID itself is the conversation ID
+            let conversationID = session.rootBlock?.blockID ?? sessionID
+            _ = store.ensureConversationBlock(
+                id: conversationID,
+                title: session.title,
+                sceneID: session.rootBlock?.sceneID
+            )
+        
+            let userID = existingUserMessageID ?? UUID()
         let userMessage = ConsoleMessage(
+            id: userID,
             role: .user,
             text: text,
             createdAt: timestamp,
@@ -710,11 +873,36 @@ extension WorkspaceViewModel {
             state: .pending
         )
 
-        session.messages.append(userMessage)
+        if !session.messages.contains(where: { $0.id == userID }) {
+                session.messages.append(userMessage)
+            }
         session.messages.append(pendingMessage)
         session.lastUsedAt = Date()
         session.requestStatus = .inFlight
         consoleSessions[index] = session
+        
+        // ✅ persist user message into WorkspaceStore Block
+        if var block = store.block(id: conversationID) {
+             let st = vppRuntime.state
+             let blockUser = Message(
+                id: userID,
+                 isUser: true,
+                 timestamp: timestamp,
+                 body: text,
+                 tag: st.currentTag,
+                 cycleIndex: st.cycleIndex,
+                 assumptions: 0,
+                 sources: .none,
+                 locus: st.locus,
+                 isValidVpp: true,
+                 validationIssues: []
+             )
+            if !block.messages.contains(where: { $0.id == userID }) {
+                        block.messages.append(blockUser)
+                    }
+             block.updatedAt = Date()
+             store.update(block: block)
+         }
 
         // ✅ build request messages
         var requestMessages: [LLMMessage] = session.messages.map { message in
@@ -755,7 +943,34 @@ extension WorkspaceViewModel {
                 latestSession.messages[pendingIndex].state = .normal
                 latestSession.messages[pendingIndex].vppValidation = vppRuntime.validateAssistantReply(response.text)
             }
-
+            
+            // ✅ persist assistant reply into WorkspaceStore Block
+            if var block = store.block(id: conversationID) {
+                 let st = vppRuntime.state
+                 let validation = vppRuntime.validateAssistantReply(response.text)
+                 let blockAssistant = Message(
+                     id: pendingMessage.id,
+                     isUser: false,
+                     timestamp: Date(),
+                     body: response.text,
+                     tag: st.currentTag,
+                     cycleIndex: st.cycleIndex,
+                     assumptions: 0,
+                     sources: .none,
+                     locus: st.locus,
+                     isValidVpp: validation.isValid,
+                     validationIssues: validation.issues
+                 )
+                if !block.messages.contains(where: { $0.id == pendingMessage.id }) {
+                            block.messages.append(blockAssistant)
+                        }
+                 block.updatedAt = Date()
+                store.update(block: block)
+             }
+            
+             // ✅ keep console list in sync with new/updated block
+             syncConsoleSessionsFromBlocks()
+            
             latestSession.requestStatus = .idle
             consoleSessions[latestIndex] = latestSession
 

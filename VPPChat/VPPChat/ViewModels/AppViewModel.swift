@@ -116,18 +116,59 @@ extension AppViewModel {
 // MARK: - Session parity bridge (InMemoryStore <-> WorkspaceViewModel)
 
  extension AppViewModel {
+     private var legacyWelcomeSessionNames: Set<String> { ["Welcome session", "welcome", "Welcome", "Welcome Session"] }
+     
+         private func purgeLegacyWelcomeSessions(keeping canonicalID: UUID) {
+             store.sessions.removeAll { s in
+                 guard s.id != canonicalID else { return false }
+                 guard legacyWelcomeSessionNames.contains(s.name) else { return false }
+                         // Only delete the known seed (“Thanks for trying the app”) or tiny stubs
+                         let hasThanksStub = s.messages.contains { $0.body.localizedCaseInsensitiveContains("thanks for trying the app") }
+                         return hasThanksStub || s.messages.count <= 2
+             }
+         }
+     
+         private func ensureCanonicalWelcomeSessionSelected() {
+             let welcomeBlock = workspace.store.ensureWelcomeConversationSeeded()
+             let canonicalID = welcomeBlock.id
+     
+             purgeLegacyWelcomeSessions(keeping: canonicalID)
+     
+             if let idx = store.sessions.firstIndex(where: { $0.id == canonicalID }) {
+                 store.sessions[idx].name = "Welcome"
+                 store.sessions[idx].updatedAt = Date()
+                 store.sessions[idx].messages = welcomeBlock.messages
+             } else {
+                 let session = Session(
+                     id: canonicalID,
+                     name: "Welcome",
+                     folderID: selectedFolderID,
+                     isPinned: true,
+                     locus: "Getting Started",
+                     createdAt: welcomeBlock.createdAt,
+                     updatedAt: welcomeBlock.updatedAt,
+                     messages: welcomeBlock.messages,
+                     modelID: SessionDefaults.defaultModelID,
+                     temperature: SessionDefaults.defaultTemperature,
+                     contextStrategy: SessionDefaults.defaultContextStrategy
+                 )
+                 store.sessions.insert(session, at: 0)
+             }
+     
+             selectedSessionID = canonicalID
+             workspace.selectedSessionID = canonicalID
+         }
     func ensureDefaultSession() {
-        if store.sessions.isEmpty {
-            createNewSession(in: selectedFolder)
-            return
-        }
-        syncWorkspaceFromStore()
-        if selectedSessionID == nil {
-            selectedSessionID = store.sessions.first?.id
-        }
-        if let selectedSessionID {
-            workspace.selectedSessionID = selectedSessionID
-        }
+        // Always ensure the canonical Welcome exists and is selected on first boot.
+                if store.sessions.isEmpty {
+                    ensureCanonicalWelcomeSessionSelected()
+                    syncWorkspaceFromStore()
+                    return
+                }
+        
+                // If legacy welcomes exist (from previous seed versions), purge them and select canonical.
+                ensureCanonicalWelcomeSessionSelected()
+                syncWorkspaceFromStore()
     }
 
     func ensureConsoleSessionExists(for session: Session) {

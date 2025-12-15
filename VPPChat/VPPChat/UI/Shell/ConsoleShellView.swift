@@ -30,6 +30,7 @@ struct ConsoleShellView: View {
             }
         }
         .onAppear {
+            workspace.syncConsoleSessionsFromBlocks()
             print("ConsoleShellView workspace instance: \(workspace.instanceID)")
             appViewModel.ensureDefaultSession()
             appViewModel.syncWorkspaceFromStore()

@@ -18,51 +18,7 @@ final class InMemoryStore: ObservableObject {
 
     static func makeDefault() -> (folders: [Folder], sessions: [Session]) {
         let defaultFolder = Folder(id: UUID(), name: "General", isPinned: true, sessions: [])
-        let sessionID = UUID()
-        let now = Date()
-        let placeholderMessages: [Message] = [
-            Message(
-                id: UUID(),
-                isUser: true,
-                timestamp: now.addingTimeInterval(-300),
-                body: "!<g> --correct\nHello, VPPConsole!",
-                tag: .g,
-                cycleIndex: 1,
-                assumptions: 0,
-                sources: .none,
-                locus: "VPPConsole",
-                isValidVpp: true,
-                validationIssues: []
-            ),
-            Message(
-                id: UUID(),
-                isUser: false,
-                timestamp: now.addingTimeInterval(-290),
-                body: "<q> Thanks for trying the app.\n[Version=v1.4 | Tag=<q_1> | Sources=<none> | Assumptions=0 | Cycle=1/3 | Locus=VPPConsole]",
-                tag: .q,
-                cycleIndex: 1,
-                assumptions: 0,
-                sources: .none,
-                locus: "VPPConsole",
-                isValidVpp: true,
-                validationIssues: []
-            )
-        ]
-
-        let defaultSession = Session(
-            id: sessionID,
-            name: "Welcome Session",
-            folderID: defaultFolder.id,
-            isPinned: true,
-            locus: "VPPConsole",
-            createdAt: now,
-            updatedAt: now,
-            messages: placeholderMessages
-        )
-
-        var folder = defaultFolder
-        folder.sessions = [sessionID]
-        return ([folder], [defaultSession])
+        return ([defaultFolder], [])
     }
 
     func folder(for session: Session.ID) -> Folder? {
