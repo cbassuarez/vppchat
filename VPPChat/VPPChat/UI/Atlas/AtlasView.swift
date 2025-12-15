@@ -100,6 +100,9 @@ struct AtlasView: View {
             return .handled
         }
 #endif
+        .onAppear {
+            print("AtlasView workspace instance: \(workspaceVM.instanceID)")
+        }
     }
 
     // MARK: - Filters band (toolbar)

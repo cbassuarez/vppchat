@@ -46,6 +46,9 @@ struct MainShellView: View {
             }
         }
         .background(Color.clear)
+        .onAppear {
+            print("MainShellView workspace instance: \(workspaceVM.instanceID)")
+        }
     }
 
     private func sendToConsole(_ block: Block) {

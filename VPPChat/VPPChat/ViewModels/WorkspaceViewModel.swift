@@ -3,6 +3,7 @@ import Combine
 import SwiftUI
 
 final class WorkspaceViewModel: ObservableObject {
+    let instanceID = UUID()
     @Published var store: WorkspaceStore
     @Published var selectedProjectID: Project.ID?
     @Published var selectedTrackID: Track.ID?

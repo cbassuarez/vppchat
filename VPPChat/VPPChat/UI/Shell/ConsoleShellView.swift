@@ -30,7 +30,10 @@ struct ConsoleShellView: View {
             }
         }
         .onAppear {
+            print("ConsoleShellView workspace instance: \(workspace.instanceID)")
             appViewModel.ensureDefaultSession()
+            appViewModel.syncWorkspaceFromStore()
+            workspace.selectedSessionID = appViewModel.selectedSessionID
         }
     }
 
@@ -81,14 +84,14 @@ private struct ConsoleSessionSidebar: View {
                 .buttonStyle(.plain)
             }
 
-            List(selection: $workspace.selectedSessionID) {
-                ForEach(workspace.consoleSessions) { session in
-                    Text(session.title)
+            List(selection: selectionBinding) {
+                ForEach(appViewModel.store.sessions) { session in
+                    Text(session.name)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(AppTheme.Colors.textSecondary)
-                        .tag(session.id as ConsoleSession.ID?)
+                        .tag(session.id as Session.ID?)
                         .onTapGesture {
-                            workspace.selectedSessionID = session.id
+                            appViewModel.selectSession(session)
                             workspace.touchConsoleSession(session.id)
                         }
                 }
@@ -99,6 +102,16 @@ private struct ConsoleSessionSidebar: View {
         }
         .padding(12)
         .panelBackground()
+    }
+
+    private var selectionBinding: Binding<Session.ID?> {
+        Binding(
+            get: { appViewModel.selectedSessionID },
+            set: { newValue in
+                appViewModel.selectedSessionID = newValue
+                workspace.selectedSessionID = newValue
+            }
+        )
     }
 }
 
