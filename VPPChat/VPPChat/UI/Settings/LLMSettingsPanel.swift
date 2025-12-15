@@ -3,7 +3,12 @@ import SwiftUI
 struct LLMSettingsPanel: View {
     @EnvironmentObject private var llmConfig: LLMConfigStore
     @State private var localKey: String = ""
-
+    @State private var revealKey: Bool = false
+        @State private var didLoad: Bool = false
+    
+        @State private var showSavedPill: Bool = false
+        @State private var saveDebounceTask: Task<Void, Never>? = nil
+        @State private var keySaveTask: Task<Void, Never>? = nil
     private var statusLabel: String {
         switch llmConfig.keyStatus {
         case .notConfigured:
@@ -26,16 +31,11 @@ struct LLMSettingsPanel: View {
         }
     }
 
-    private var selectedModel: LLMModelPreset {
-        LLMModelCatalog.preset(for: llmConfig.defaultModelID)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
             apiKeySection
             clientModeSection
-            defaultsPreview
         }
         .padding(16)
         .background(
@@ -48,7 +48,19 @@ struct LLMSettingsPanel: View {
         )
         .onAppear {
             localKey = llmConfig.apiKey
+            DispatchQueue.main.async { didLoad = true }
         }
+        .onChange(of: localKey) { newValue in
+                    guard didLoad else { return }
+                    keySaveTask?.cancel()
+                    keySaveTask = Task {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        await MainActor.run {
+                            llmConfig.apiKey = newValue
+                            flashSaved()
+                        }
+                    }
+                }
     }
 
     private var header: some View {
@@ -71,6 +83,16 @@ struct LLMSettingsPanel: View {
 
             Spacer()
 
+            HStack(spacing: 8) {
+                            statusPill
+                            if showSavedPill {
+                                savedPill
+                            }
+                        }
+        }
+    }
+    
+    private var statusPill: some View {
             HStack(spacing: 6) {
                 Circle()
                     .fill(statusColor)
@@ -88,7 +110,25 @@ struct LLMSettingsPanel: View {
             .clipShape(Capsule())
             .foregroundStyle(AppTheme.Colors.textSecondary)
         }
-    }
+    
+        private var savedPill: some View {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Saved")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(AppTheme.Colors.surface1)
+            .overlay(
+                Capsule()
+                    .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+            )
+            .clipShape(Capsule())
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        }
 
     private var apiKeySection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -98,29 +138,37 @@ struct LLMSettingsPanel: View {
                 .foregroundStyle(AppTheme.Colors.textSubtle)
 
             HStack(spacing: 8) {
-                SecureField("sk-...", text: $localKey)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(AppTheme.Colors.surface1)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AppTheme.Radii.s)
-                            .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                    )
-
-                Button("Save") {
-                    llmConfig.apiKey = localKey
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(StudioTheme.Colors.accentSoft)
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppTheme.Radii.s)
-                        .stroke(StudioTheme.Colors.accent, lineWidth: 1)
-                )
-                .foregroundStyle(StudioTheme.Colors.textPrimary)
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.s, style: .continuous))
+                Group {
+                                    if revealKey {
+                                        TextField("sk-...", text: $localKey)
+                                    } else {
+                                        SecureField("sk-...", text: $localKey)
+                                    }
+                                }
+                                .textFieldStyle(.plain)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(AppTheme.Colors.surface1)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                                )
+                
+                                Button {
+                                    revealKey.toggle()
+                                } label: {
+                                    Image(systemName: revealKey ? "eye.slash" : "eye")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                                        .frame(width: 30, height: 30)
+                                }
+                                .buttonStyle(.plain)
+                                .background(AppTheme.Colors.surface1)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                                )
             }
 
             switch llmConfig.keyStatus {
@@ -160,6 +208,7 @@ struct LLMSettingsPanel: View {
 
         return Button {
             llmConfig.clientMode = mode
+            flashSaved()
         } label: {
             Text(mode.label)
                 .font(.system(size: 11, weight: .semibold))
@@ -179,56 +228,17 @@ struct LLMSettingsPanel: View {
         }
         .buttonStyle(.plain)
     }
+}
 
-    private var defaultsPreview: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Defaults Preview")
-                .font(.system(size: 11, weight: .semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(AppTheme.Colors.textSubtle)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Model")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.Colors.textPrimary)
-                    Spacer()
-                    Text(selectedModel.label)
-                        .font(.system(size: 12))
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                }
-
-                HStack {
-                    Text("Temperature")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.Colors.textPrimary)
-                    Spacer()
-                    Text(String(format: "%.2f", llmConfig.defaultTemperature))
-                        .font(.system(size: 12))
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                }
-
-                HStack {
-                    Text("Context Strategy")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.Colors.textPrimary)
-                    Spacer()
-                    Text(llmConfig.defaultContextStrategy.label)
-                        .font(.system(size: 12))
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                }
+private extension LLMSettingsPanel {
+    func flashSaved() {
+        withAnimation(.easeOut(duration: 0.15)) { showSavedPill = true }
+        saveDebounceTask?.cancel()
+        saveDebounceTask = Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.15)) { showSavedPill = false }
             }
-            .padding(12)
-            .background(AppTheme.Colors.surface1)
-            .overlay(
-                RoundedRectangle(cornerRadius: AppTheme.Radii.s)
-                    .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.s, style: .continuous))
-
-            Text("Adjust these in Studio’s inspector. All new sessions will use these defaults.")
-                .font(.system(size: 11))
-                .foregroundStyle(AppTheme.Colors.textSecondary)
         }
     }
 }

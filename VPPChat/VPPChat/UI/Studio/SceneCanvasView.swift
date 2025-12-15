@@ -46,12 +46,14 @@ struct StudioComposerView: View {
     @State private var draft: String = ""
     @State private var modifiers = VppModifiers()
     @State private var sources: VppSources = .none
+    @State private var assumptions: AssumptionsConfig = .none
 
     var body: some View {
         ComposerView(
             draft: $draft,
             modifiers: $modifiers,
             sources: $sources,
+            assumptions: $assumptions,
             runtime: vm.vppRuntime,
             requestStatus: .idle,              // 👈 was: sendPhase: .idleDisabled
             sendAction: sendDraft,

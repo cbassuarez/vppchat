@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 enum LLMKeyStatus: Equatable {
     case notConfigured
@@ -33,6 +34,7 @@ enum LLMClientMode: String, CaseIterable, Identifiable, Codable {
 @MainActor
 final class LLMConfigStore: ObservableObject {
     static let shared = LLMConfigStore()
+    let objectWillChange = ObservableObjectPublisher()
 
     @Published var apiKey: String {
         didSet {

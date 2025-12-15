@@ -59,12 +59,5 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(.upArrow, modifiers: [.command, .option])
         }
-
-        CommandGroup(replacing: .appSettings) {
-            Button("Settings…") {
-                appViewModel.showSettings()
-            }
-            .keyboardShortcut(",", modifiers: .command)
-        }
     }
 }

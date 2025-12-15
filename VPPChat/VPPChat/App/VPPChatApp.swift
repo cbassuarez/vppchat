@@ -18,76 +18,158 @@ struct WindowConfigurator: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+import SwiftUI
+import Combine
+import AppKit
+
 struct SettingsRoot: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var pane: Pane = .general
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pane: Pane = .general
 
-  enum Pane: String, CaseIterable, Identifiable {
-    case general = "General"
-    case motion = "Motion"
-    case advanced = "Advanced"
-    var id: String { rawValue }
-  }
+    enum Pane: String, CaseIterable, Identifiable {
+        case general = "General"
+        case llm = "LLM"
+        case motion = "Motion"
+        case advanced = "Advanced"
+        case about = "About"
 
-  var body: some View {
-    VStack(spacing: 0) {
-      Picker("Pane", selection: $pane) {
-        ForEach(Pane.allCases) { p in
-          Text(p.rawValue).tag(p)
+        var id: String { rawValue }
+
+        var icon: String {
+            switch self {
+            case .general: return "gearshape"
+            case .llm: return "bolt.horizontal.circle.fill"
+            case .motion: return "sparkles"
+            case .advanced: return "slider.horizontal.3"
+            case .about: return "info.circle"
+            }
         }
-      }
-      .pickerStyle(.segmented)
-      .padding(12)
+    }
 
-      Divider()
+    var body: some View {
+        VStack(spacing: 0) {
+            topTabs
+                .padding(12)
 
-      Group {
+            Divider()
+                .overlay(AppTheme.Colors.borderSoft.opacity(0.7))
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    paneView
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+            }
+        }
+        .frame(minWidth: 620, minHeight: 520)
+    }
+
+    // MARK: - Top tabs (Logic-style)
+
+    private var topTabs: some View {
+        HStack(spacing: 8) {
+            ForEach(Pane.allCases) { p in
+                SettingsTabChip(
+                    title: p.rawValue,
+                    systemImage: p.icon,
+                    isSelected: pane == p
+                ) {
+                    if reduceMotion {
+                        pane = p
+                    } else {
+                        withAnimation(.easeOut(duration: 0.16)) {
+                            pane = p
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(StudioTheme.Colors.surface1)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(StudioTheme.Colors.borderSoft, lineWidth: 1)
+                )
+        )
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Pane switch
+
+    @ViewBuilder
+    private var paneView: some View {
         switch pane {
         case .general:
-          ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-              Text("LLM")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(AppTheme.Colors.textPrimary)
+            SettingsGeneralPane()
 
-              LLMSettingsPanel()
+        case .llm:
+            SettingsLLMPane()
 
-              SettingsGeneralPane()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-          }
         case .motion:
-          paneCard(title: "Motion", lines: 12)
+            SettingsMotionPane()
+
         case .advanced:
-          paneCard(title: "Advanced", lines: 18)
+            SettingsAdvancedPane()
+
+        case .about:
+            SettingsAboutPane()
         }
-      }
-      .padding(12)
     }
-    .frame(minWidth: 520)
-  }
-
-  private func paneCard(title: String, lines: Int) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Text(title)
-        .font(.system(size: 16.5, weight: .semibold))
-
-      ForEach(0..<lines, id: \.self) { _ in
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(.primary.opacity(0.06))
-          .frame(height: 12)
-      }
-    }
-    .padding(12)
-    .background(.thinMaterial)
-    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-    .overlay {
-      RoundedRectangle(cornerRadius: 14, style: .continuous)
-        .strokeBorder(.primary.opacity(0.07), lineWidth: 1)
-    }
-  }
 }
+
+// MARK: - Shared tab chip
+
+private struct SettingsTabChip: View {
+    let title: String
+    let systemImage: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(isSelected ? StudioTheme.Colors.accentSoft : StudioTheme.Colors.surface1)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(isSelected ? StudioTheme.Colors.accent : StudioTheme.Colors.borderSoft, lineWidth: 1)
+            )
+            .foregroundStyle(isSelected ? StudioTheme.Colors.textPrimary : StudioTheme.Colors.textSecondary)
+            .scaleEffect(isHovering ? 1.02 : 1.0)
+        }
+        .buttonStyle(SettingsScalePressButtonStyle())
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
+    }
+}
+
+private struct SettingsScalePressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+    }
+}
+
 // VPPChatApp.swift
 @main
 struct VPPChatApp: App {

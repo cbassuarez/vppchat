@@ -4,6 +4,8 @@ struct ComposerView: View {
     @Binding var draft: String
     @Binding var modifiers: VppModifiers
     @Binding var sources: VppSources
+    @Binding var assumptions: AssumptionsConfig
+    @State private var showAssumptionsModal = false
 
     @ObservedObject var runtime: VppRuntime
     var requestStatus: RequestStatus
@@ -53,6 +55,74 @@ struct ComposerView: View {
     }
 
     // MARK: - Bands
+    private var assumptionsZeroChip: some View {
+        let isSelected = (assumptions == .zero)
+
+        return Button {
+            // tap again to clear (→ none)
+            assumptions = isSelected ? .none : .zero
+        } label: {
+            Text("0")
+                .font(.system(size: 11, weight: .medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? theme.structuralAccent.opacity(0.22)
+                                         : AppTheme.Colors.surface0)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? theme.structuralAccent
+                                           : AppTheme.Colors.borderSoft,
+                                lineWidth: isSelected ? 1.3 : 1)
+                )
+                .foregroundStyle(isSelected ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var assumptionsMoreChip: some View {
+        let isSelected = assumptions.isCustom
+
+        return Button {
+            showAssumptionsModal = true
+        } label: {
+            HStack(spacing: 6) {
+                Text("1+")
+                    .font(.system(size: 11, weight: .medium))
+
+                if case .custom(let items) = assumptions {
+                    Text("\(items.count)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(AppTheme.Colors.surface1)
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule().stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                        )
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                }
+
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(isSelected ? theme.structuralAccent.opacity(0.22)
+                                     : AppTheme.Colors.surface0)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(isSelected ? theme.structuralAccent
+                                       : AppTheme.Colors.borderSoft,
+                            lineWidth: isSelected ? 1.3 : 1)
+            )
+            .foregroundStyle(isSelected ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
 
     // Top: cycle (read-only), assumptions, locus, sources
     private var metaBand: some View {
@@ -83,12 +153,13 @@ struct ComposerView: View {
                         .textCase(.uppercase)
                         .foregroundStyle(AppTheme.Colors.textSubtle)
 
-                    HStack(spacing: 4) {
-                        ForEach([0, 1, 2, 3, 4, 5], id: \.self) { value in
-                            assumptionsChip(value: value)
-                        }
-                    }
+                    assumptionsZeroChip
+                    assumptionsMoreChip
                 }
+                .sheet(isPresented: $showAssumptionsModal) {
+                    AssumptionsModal(assumptions: $assumptions)
+                }
+
             }
 
             Divider()
@@ -488,5 +559,11 @@ struct ComposerView: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+}
+extension AssumptionsConfig {
+    var isCustom: Bool {
+        if case .custom = self { return true }
+        return false
     }
 }

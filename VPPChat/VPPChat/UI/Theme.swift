@@ -213,6 +213,7 @@ enum AppTheme {
         static let card: CGFloat = 16
         static let panel: CGFloat = 24
         static let chip: CGFloat = 999
+        static let s: CGFloat = 10
     }
 
     enum Spacing {

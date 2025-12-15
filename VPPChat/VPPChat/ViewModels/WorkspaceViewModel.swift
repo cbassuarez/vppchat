@@ -688,6 +688,7 @@ extension WorkspaceViewModel {
         _ text: String,
         in sessionID: ConsoleSession.ID,
         config: LLMRequestConfig,
+        assumptions: AssumptionsConfig = .none,          // ✅ add
         llmConfigStore: LLMConfigStore = .shared
     ) async {
         guard let index = consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }
@@ -714,7 +715,8 @@ extension WorkspaceViewModel {
         session.requestStatus = .inFlight
         consoleSessions[index] = session
 
-        let requestMessages: [LLMMessage] = session.messages.map { message in
+        // ✅ build request messages
+        var requestMessages: [LLMMessage] = session.messages.map { message in
             let role: LLMRole
             switch message.role {
             case .system: role = .system
@@ -722,6 +724,14 @@ extension WorkspaceViewModel {
             case .assistant: role = .assistant
             }
             return LLMMessage(id: message.id, role: role, content: message.text)
+        }
+
+        // ✅ EPHEMERAL assumptions attachment (not persisted in session.messages)
+        if let attachment = assumptions.assumptionsAttachmentText {
+            requestMessages.insert(
+                LLMMessage(role: .system, content: attachment),
+                at: 0
+            )
         }
 
         let request = LLMRequest(
@@ -748,7 +758,9 @@ extension WorkspaceViewModel {
             latestSession.requestStatus = .idle
             consoleSessions[latestIndex] = latestSession
 
+            // footer ingestion keeps tag/cycle/locus in sync
             vppRuntime.ingestFooterLine(response.text)
+
         } catch {
             guard let latestIndex = consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }
             var latestSession = consoleSessions[latestIndex]

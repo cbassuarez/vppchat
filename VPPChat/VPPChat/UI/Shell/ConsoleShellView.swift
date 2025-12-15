@@ -112,6 +112,7 @@ private struct ConsoleSessionView: View {
     @State private var draftText: String = ""
     @State private var modifiers: VppModifiers = VppModifiers()
     @State private var sources: VppSources = .none
+    @State private var assumptions: AssumptionsConfig = .none
 
     let session: ConsoleSession
 
@@ -131,6 +132,7 @@ private struct ConsoleSessionView: View {
                 draft: $draftText,
                 modifiers: $modifiers,
                 sources: $sources,
+                assumptions: $assumptions,
                 runtime: workspace.vppRuntime,
                 requestStatus: workspace.selectedConsoleSession?.requestStatus ?? .idle,
                 sendAction: handleSend,

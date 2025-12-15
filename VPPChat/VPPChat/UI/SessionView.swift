@@ -1,10 +1,15 @@
 import SwiftUI
 
 // SessionView displays a transcript and composer for the selected session.
+import SwiftUI
+
+// SessionView displays a transcript and composer for the selected session.
 struct SessionView: View {
     @ObservedObject private var appViewModel: AppViewModel
+    @EnvironmentObject private var workspace: WorkspaceViewModel
+
     @StateObject private var viewModel: SessionViewModel
-    @StateObject private var consoleViewModel: ConsoleViewModel
+    @State private var assumptions: AssumptionsConfig = .none
 
     private let session: Session
 
@@ -12,33 +17,35 @@ struct SessionView: View {
         self.session = session
         self._appViewModel = ObservedObject(initialValue: appViewModel)
 
-        // Seed a ConsoleSession from the persisted Session messages.
-        let seededConsoleSession = ConsoleSession(
-            id: session.id,
-            title: session.name,
-            createdAt: session.createdAt,
-            messages: SessionView.makeConsoleMessages(from: session)
-        )
-
-        _consoleViewModel = StateObject(
-            wrappedValue: ConsoleViewModel(session: seededConsoleSession)
-        )
-
         _viewModel = StateObject(
-            wrappedValue: SessionViewModel(
-                sessionID: session.id,
-                store: appViewModel.store,
-                runtime: appViewModel.runtime,
-                llmClient: appViewModel.llmClient
-            )
+            wrappedValue: SessionViewModel(runtime: appViewModel.runtime)
         )
+    }
+
+    // MARK: - Workspace-backed console session
+
+    private var consoleSessionIndex: Int? {
+        workspace.consoleSessions.firstIndex(where: { $0.id == session.id })
+    }
+
+    private var consoleSession: ConsoleSession? {
+        guard let idx = consoleSessionIndex else { return nil }
+        return workspace.consoleSessions[idx]
+    }
+
+    private var requestStatus: RequestStatus {
+        consoleSession?.requestStatus ?? .idle
+    }
+
+    private var consoleMessages: [ConsoleMessage] {
+        consoleSession?.messages ?? []
     }
 
     var body: some View {
         VStack(spacing: 0) {
             MessageListView(
                 sessionID: session.id,
-                messages: consoleViewModel.messages,
+                messages: consoleMessages,
                 onRetry: retryLastUser
             )
 
@@ -46,8 +53,9 @@ struct SessionView: View {
                 draft: $viewModel.draftText,
                 modifiers: $viewModel.currentModifiers,
                 sources: $viewModel.currentSources,
+                assumptions: $assumptions,
                 runtime: appViewModel.runtime,
-                requestStatus: consoleViewModel.requestStatus,
+                requestStatus: requestStatus,
                 sendAction: handleSend,
                 tagSelection: viewModel.setTag,
                 stepCycle: viewModel.stepCycle,
@@ -58,79 +66,129 @@ struct SessionView: View {
         }
         .navigationTitle(session.name)
         .background(NoiseBackground())
+        .onAppear {
+            // ✅ ensure WorkspaceViewModel and AppViewModel share the same runtime instance
+            workspace.vppRuntime = appViewModel.runtime
+
+            // ✅ seed a ConsoleSession in WorkspaceViewModel if missing
+            ensureWorkspaceConsoleSessionSeeded()
+        }
         .onChange(of: viewModel.draftText) { _ in
-            // If we were in an error state, editing the draft clears it.
-            if case .error = consoleViewModel.requestStatus {
-                consoleViewModel.requestStatus = .idle
+            // Clear error state when the user edits the draft (workspace-backed)
+            if case .error = requestStatus,
+               let idx = consoleSessionIndex {
+                workspace.consoleSessions[idx].requestStatus = .idle
             }
         }
     }
 
-    // MARK: - Sending pipeline
+    // MARK: - Sending pipeline (workspace-routed)
 
     private func handleSend() {
         let trimmed = viewModel.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let header = appViewModel.runtime.makeHeader(
-            tag: appViewModel.runtime.state.currentTag,
-            modifiers: viewModel.currentModifiers
-        )
-        let composedText = "\(header)\n\(trimmed)"
+        ensureWorkspaceConsoleSessionSeeded()
 
-        // Append user message to console + persist it with full VPP header.
-        consoleViewModel.appendUserMessage(text: composedText)
+        // build outgoing user text (header + optional --assumptions flag + body)
+        let composedText = makeOutgoingUserBody(
+            draft: viewModel.draftText,
+            runtime: appViewModel.runtime,
+            modifiers: viewModel.currentModifiers,
+            assumptions: assumptions
+        )
+
+        // persist user message (your existing store transcript)
         persistUserMessage(text: composedText)
 
-        // Clear composer
+        // clear composer immediately
         viewModel.draftText = ""
 
-        // Create pending assistant placeholder.
-        consoleViewModel.beginAssistantPlaceholder(modelLabel: "5.1-thinking (stub)")
+        // capture assumptions for this send (since we reset right after queueing)
+        let sendAssumptions = assumptions
 
-        // NOTE: In Sprint 1 this can be backed by a stub llmClient.
-        appViewModel.llmClient.sendMessage(header: header, body: trimmed) { result in
-            switch result {
-            case .success(let text):
-                // Update the pending assistant bubble + VPP validation.
-                consoleViewModel.completeAssistantReply(
-                    text: text,
-                    runtime: appViewModel.runtime
-                )
+        // ✅ route through WorkspaceViewModel.sendPrompt
+        let cfg = WorkspaceViewModel.LLMRequestConfig(
+            modelID: workspace.consoleModelID,
+            temperature: workspace.consoleTemperature,
+            contextStrategy: workspace.consoleContextStrategy
+        )
 
-                // Ingest footer to sync tag / cycle / locus from the assistant.
-                updateRuntimeFromFooter(in: text)
+        Task { @MainActor in
+            await workspace.sendPrompt(
+                composedText,
+                in: session.id,
+                config: cfg,
+                assumptions: sendAssumptions
+            )
 
-                // Persist assistant message (with validation mirrored into the store).
-                let validation = appViewModel.runtime.validateAssistantReply(text)
-                persistAssistantMessage(text: text, validation: validation)
-
-            case .failure(let error):
-                consoleViewModel.failAssistantReply(reason: error.localizedDescription)
-            }
+            // if the assistant completed successfully, persist the reply into your store
+            persistLatestAssistantIfAvailable()
         }
+
+        // ✅ reset after queueing send
+        assumptions = .none
+    }
+
+    private func makeOutgoingUserBody(
+        draft: String,
+        runtime: VppRuntime,
+        modifiers: VppModifiers,
+        assumptions: AssumptionsConfig
+    ) -> String {
+        var header = runtime.makeHeader(tag: runtime.state.currentTag, modifiers: modifiers)
+        if let flag = assumptions.headerFlag { header += " \(flag)" }
+        return header + "\n" + draft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func retryLastUser() {
-        consoleViewModel.retryLastUser { lastText in
-            // Reuse last user text as current draft and re-send.
-            viewModel.draftText = lastText
+        guard let session = consoleSession else { return }
+
+        if let lastUser = session.messages.last(where: { $0.role == .user })?.text {
+            // Strip the leading VPP header line, keep the body as the draft
+            viewModel.draftText = stripHeaderLineIfPresent(from: lastUser)
             handleSend()
         }
     }
 
-    // MARK: - Runtime footer ingestion
-    /// Uses the last non-empty line of the assistant's reply as a footer
-    /// and feeds it into VppRuntime to keep tag/cycle/locus in sync.
-    private func updateRuntimeFromFooter(in text: String) {
-        // Simple split on newlines; we don't actually need empty subsequences here
-        let lines = text.split(whereSeparator: \.isNewline)
+    private func stripHeaderLineIfPresent(from text: String) -> String {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let first = lines.first else { return text }
 
-        if let lastLine = lines.last(where: {
-            !$0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty
-        }) {
-            appViewModel.runtime.ingestFooterLine(String(lastLine))
+        let firstLine = first.trimmingCharacters(in: .whitespacesAndNewlines)
+        if firstLine.hasPrefix("!<") {
+            // return everything after the first line
+            return lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        return text
+    }
+
+    @MainActor
+    private func ensureWorkspaceConsoleSessionSeeded() {
+        if workspace.consoleSessions.contains(where: { $0.id == session.id }) { return }
+
+        let seeded = ConsoleSession(
+            id: session.id,
+            title: session.name,
+            createdAt: session.createdAt,
+            messages: SessionView.makeConsoleMessages(from: session)
+        )
+
+        workspace.consoleSessions.insert(seeded, at: 0)
+        workspace.selectedSessionID = seeded.id
+    }
+
+    @MainActor
+    private func persistLatestAssistantIfAvailable() {
+        guard let s = consoleSession else { return }
+        guard s.requestStatus == .idle else { return }
+
+        guard let latestAssistant = s.messages.last(where: { $0.role == .assistant }),
+              !latestAssistant.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        let validation = appViewModel.runtime.validateAssistantReply(latestAssistant.text)
+        persistAssistantMessage(text: latestAssistant.text, validation: validation)
     }
 }
 
