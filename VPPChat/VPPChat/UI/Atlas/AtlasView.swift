@@ -465,6 +465,7 @@ struct AtlasView: View {
 
     private func openInStudio(block: Block) {
         workspaceVM.select(block: block)
+        shellModeBinding?.wrappedValue = .studio   //  always open
         onOpenInStudio?(block)
     }
 

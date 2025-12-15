@@ -67,11 +67,9 @@ struct SessionView: View {
         .navigationTitle(session.name)
         .background(NoiseBackground())
         .onAppear {
-            // ✅ ensure WorkspaceViewModel and AppViewModel share the same runtime instance
-            workspace.vppRuntime = appViewModel.runtime
-
-            // ✅ seed a ConsoleSession in WorkspaceViewModel if missing
-            ensureWorkspaceConsoleSessionSeeded()
+            // Ensure a workspace ConsoleSession exists for this store Session id
+                appViewModel.ensureConsoleSessionExists(for: session)
+                workspace.selectedSessionID = session.id
         }
         .onChange(of: viewModel.draftText) { _ in
             // Clear error state when the user edits the draft (workspace-backed)
@@ -88,8 +86,8 @@ struct SessionView: View {
         let trimmed = viewModel.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        ensureWorkspaceConsoleSessionSeeded()
-
+        appViewModel.ensureConsoleSessionExists(for: session)
+        workspace.selectedSessionID = session.id   //  make the target explicit
         // build outgoing user text (header + optional --assumptions flag + body)
         let composedText = makeOutgoingUserBody(
             draft: viewModel.draftText,
@@ -98,33 +96,22 @@ struct SessionView: View {
             assumptions: assumptions
         )
 
-        // persist user message (your existing store transcript)
-        persistUserMessage(text: composedText)
+        
 
         // clear composer immediately
         viewModel.draftText = ""
 
-        // capture assumptions for this send (since we reset right after queueing)
-        let sendAssumptions = assumptions
 
         // ✅ route through WorkspaceViewModel.sendPrompt
         let cfg = WorkspaceViewModel.LLMRequestConfig(
-            modelID: workspace.consoleModelID,
-            temperature: workspace.consoleTemperature,
-            contextStrategy: workspace.consoleContextStrategy
+            modelID: consoleSession?.modelID ?? session.modelID,
+            temperature: consoleSession?.temperature ?? session.temperature,
+            contextStrategy: consoleSession?.contextStrategy ?? session.contextStrategy
         )
 
         Task { @MainActor in
-            await workspace.sendPrompt(
-                composedText,
-                in: session.id,
-                config: cfg,
-                assumptions: sendAssumptions
-            )
-
-            // if the assistant completed successfully, persist the reply into your store
-            persistLatestAssistantIfAvailable()
-        }
+                await workspace.sendPrompt(composedText, in: session.id, config: cfg)
+            }
 
         // ✅ reset after queueing send
         assumptions = .none

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ConsoleShellView: View {
     @EnvironmentObject private var workspace: WorkspaceViewModel
-
+    @EnvironmentObject private var appViewModel: AppViewModel
     var body: some View {
         HStack(spacing: 16) {
             ConsoleSessionSidebar()
@@ -30,7 +30,7 @@ struct ConsoleShellView: View {
             }
         }
         .onAppear {
-            workspace.ensureDefaultConsoleSession()
+            appViewModel.ensureDefaultSession()
         }
     }
 
@@ -64,7 +64,7 @@ struct ConsoleShellView: View {
 
 private struct ConsoleSessionSidebar: View {
     @EnvironmentObject private var workspace: WorkspaceViewModel
-
+    @EnvironmentObject private var appViewModel: AppViewModel
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -73,7 +73,7 @@ private struct ConsoleSessionSidebar: View {
                     .foregroundStyle(AppTheme.Colors.textPrimary)
                 Spacer()
                 Button {
-                    workspace.newConsoleSession()
+                    appViewModel.createNewSession(in: appViewModel.selectedFolder)
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .bold))
