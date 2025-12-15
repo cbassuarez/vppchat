@@ -23,6 +23,8 @@ struct ConsoleMessage: Identifiable {
     var role: ConsoleMessageRole
     var text: String
     var createdAt: Date
+    var sources: VppSources
+    var sourcesTable: [VppSourceRef]
 
     /// Optional linkage to a Studio block.
     var linkedBlock: LinkedBlockPath?
@@ -40,7 +42,9 @@ struct ConsoleMessage: Identifiable {
         linkedBlock: LinkedBlockPath? = nil,
         state: ConsoleMessageState = .normal,
         vppValidation: VppRuntime.VppValidationResult? = nil,
-        linkedSessionID: UUID? = nil
+        linkedSessionID: UUID? = nil,
+        sources: VppSources = .none,
+        sourcesTable: [VppSourceRef] = []
     ) {
         self.id = id
         self.role = role
@@ -50,6 +54,8 @@ struct ConsoleMessage: Identifiable {
         self.state = state
         self.vppValidation = vppValidation
         self.linkedSessionID = linkedSessionID
+        self.sources = sources
+        self.sourcesTable = sourcesTable
     }
 }
 

@@ -1,4 +1,26 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+
+/// Transparent NSView that lets click+drag move the window (but only where you place it).
+private struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView(frame: .zero) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override var isOpaque: Bool { false }
+    }
+}
+
+extension View {
+    /// Marks this view’s hit-test region as a window-drag region.
+    /// Put it on backgrounds/empty chrome so text selection still works elsewhere.
+    func windowDraggableArea() -> some View {
+        background(WindowDragArea())
+    }
+}
+#endif
 
 struct MainShellView: View {
     @Binding var mode: ShellMode
@@ -9,14 +31,29 @@ struct MainShellView: View {
     @Environment(\.shellModeBinding) private var shellModeBinding
 
     @Namespace private var modeUnderline
+    
+    @ViewBuilder
+    private var toolbarRow: some View {
+        MainToolbar(mode: $mode)
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+            .background(
+                Color.clear
+                    .contentShape(Rectangle())
+                    .background(WindowDragArea())   // ✅ does NOT affect layout sizing
+            )
+    }
+
 
     var body: some View {
         ZStack {
+    #if os(macOS)
+            WindowMarginDragRegions(inset: 18)   // ✅ BEHIND everything
+    #endif
+
             VStack(spacing: 0) {
-                MainToolbar(mode: $mode)
-                    .padding(.horizontal, 18)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
+                toolbarRow
 
                 ZStack {
                     switch mode {
@@ -51,6 +88,7 @@ struct MainShellView: View {
         }
     }
 
+
     private func sendToConsole(_ block: Block) {
         guard
             let scene = workspaceVM.store.scene(id: block.sceneID),
@@ -66,3 +104,35 @@ struct MainShellView: View {
         }
     }
 }
+#if os(macOS)
+private struct WindowMarginDragRegions: View {
+    let inset: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+
+            ZStack {
+                // left
+                WindowDragArea()
+                    .frame(width: inset, height: h)
+                    .position(x: inset / 2, y: h / 2)
+
+                // right
+                WindowDragArea()
+                    .frame(width: inset, height: h)
+                    .position(x: w - inset / 2, y: h / 2)
+
+                // bottom
+                WindowDragArea()
+                    .frame(width: w, height: inset)
+                    .position(x: w / 2, y: h - inset / 2)
+            }
+        }
+        .ignoresSafeArea()
+        // IMPORTANT: this MUST be behind content (we did that in the ZStack),
+        // so it only receives clicks in empty margins.
+    }
+}
+#endif

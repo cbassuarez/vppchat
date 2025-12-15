@@ -779,7 +779,9 @@ extension WorkspaceViewModel {
                                         createdAt: m.timestamp,
                                         state: .normal,
                                         vppValidation: m.isUser ? nil : VppRuntime.VppValidationResult(isValid: m.isValidVpp, issues: m.validationIssues),
-                                        linkedSessionID: block.id
+                                        linkedSessionID: block.id,
+                                        sources: m.sources,
+                                        sourcesTable: m.sourcesTable
                                     )
                                 }
                             }
@@ -835,6 +837,41 @@ extension WorkspaceViewModel {
         consoleSessions.insert(seeded, at: 0)
         return 0
     }
+    func copyLastAssistantMessage() {
+        guard let session = consoleSessions.last else { return }
+        guard let msg = session.messages.last(where: { $0.role == .assistant }) else { return }
+
+        let s = MarkdownCopyText.renderedText(from: msg.text)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(s, forType: .string)
+    }
+    @MainActor
+    func createConsoleConversation(title: String? = nil) -> Block.ID? {
+        // pick a safe scene to attach the block to
+        let fallbackSceneID: Scene.ID? = selectedSceneID
+            ?? store.allProjects.first
+                .flatMap { $0.tracks.first }
+                .flatMap { store.track(id: $0)?.scenes.first }
+
+        guard let sceneID = fallbackSceneID else { return nil }
+
+        let newBlock = Block(
+            sceneID: sceneID,
+            kind: .conversation,
+            title: title ?? "Session \(consoleSessions.count + 1)",
+            subtitle: nil,
+            messages: [],
+            documentText: nil,
+            isCanonical: false,
+            createdAt: .now,
+            updatedAt: .now
+        )
+        store.add(block: newBlock)
+        selectedSessionID = newBlock.id
+        selectedBlockID = newBlock.id
+        return newBlock.id
+    }
+
 
     @MainActor
     func sendPrompt(
@@ -842,6 +879,7 @@ extension WorkspaceViewModel {
         in sessionID: ConsoleSession.ID,
         config: LLMRequestConfig,
         assumptions: AssumptionsConfig = .none,          // ✅ add
+        sourcesTable: [VppSourceRef] = [],
     llmConfigStore: LLMConfigStore = .shared,
         existingUserMessageID: UUID? = nil
     ) async {
@@ -851,12 +889,23 @@ extension WorkspaceViewModel {
         // ✅ Replies should persist into the *conversation block*:
             // - if this session is "about" a studio block, use that blockID
             // - otherwise, the sessionID itself is the conversation ID
-            let conversationID = session.rootBlock?.blockID ?? sessionID
-            _ = store.ensureConversationBlock(
-                id: conversationID,
-                title: session.title,
-                sceneID: session.rootBlock?.sceneID
-            )
+        let conversationID = session.rootBlock?.blockID ?? sessionID
+
+        let existingSceneID = store.block(id: conversationID)?.sceneID
+        let resolvedSceneID =
+            existingSceneID
+            ?? session.rootBlock?.sceneID
+            ?? selectedSceneID
+            ?? store.allProjects.first
+                .flatMap { $0.tracks.first }
+                .flatMap { store.track(id: $0)?.scenes.first }
+
+        _ = store.ensureConversationBlock(
+            id: conversationID,
+            title: session.title,
+            sceneID: resolvedSceneID
+        )
+
         
             let userID = existingUserMessageID ?? UUID()
         let userMessage = ConsoleMessage(
@@ -882,27 +931,24 @@ extension WorkspaceViewModel {
         consoleSessions[index] = session
         
         // ✅ persist user message into WorkspaceStore Block
-        if var block = store.block(id: conversationID) {
-             let st = vppRuntime.state
-             let blockUser = Message(
-                id: userID,
-                 isUser: true,
-                 timestamp: timestamp,
-                 body: text,
-                 tag: st.currentTag,
-                 cycleIndex: st.cycleIndex,
-                 assumptions: 0,
-                 sources: .none,
-                 locus: st.locus,
-                 isValidVpp: true,
-                 validationIssues: []
-             )
-            if !block.messages.contains(where: { $0.id == userID }) {
-                        block.messages.append(blockUser)
-                    }
-             block.updatedAt = Date()
-             store.update(block: block)
-         }
+        let st = vppRuntime.state
+        let sourcesSummary = VppSources.summary(for: sourcesTable)
+        let blockUser = Message(
+            id: userID,
+            isUser: true,
+            timestamp: timestamp,
+            body: text,
+            tag: st.currentTag,
+            cycleIndex: st.cycleIndex,
+            assumptions: assumptions.persistedCount,
+            sources: sourcesSummary,
+            sourcesTable: sourcesTable,
+            locus: st.locus,
+            isValidVpp: true,
+            validationIssues: []
+        )
+        store.appendMessage(to: conversationID, blockUser)
+
 
         // ✅ build request messages
         var requestMessages: [LLMMessage] = session.messages.map { message in
@@ -922,7 +968,20 @@ extension WorkspaceViewModel {
                 at: 0
             )
         }
-
+        // ✅ EPHEMERAL sources instruction + table for “footer A + per-message sources table”
+                if !sourcesTable.isEmpty {
+                    let table = sourcesTable.asVppSourcesTableMarkdown()
+                    let instruction = """
+        You MUST include a per-message sources table and compact source tokens in the compliance footer.
+        
+        Rules:
+        1) In the footer, set Sources=<s1,s2,...> using the IDs below (comma-separated, no spaces).
+        2) Include the following table verbatim in your reply body immediately above the footer (keep the header rows):
+        \(table)
+        3) If there are zero sources, set Sources=<none> and omit the table.
+        """
+                    requestMessages.insert(LLMMessage(role: .system, content: instruction), at: 0)
+                }
         let request = LLMRequest(
             modelID: config.modelID,
             temperature: config.temperature,
@@ -945,28 +1004,35 @@ extension WorkspaceViewModel {
             }
             
             // ✅ persist assistant reply into WorkspaceStore Block
-            if var block = store.block(id: conversationID) {
-                 let st = vppRuntime.state
-                 let validation = vppRuntime.validateAssistantReply(response.text)
-                 let blockAssistant = Message(
-                     id: pendingMessage.id,
-                     isUser: false,
-                     timestamp: Date(),
-                     body: response.text,
-                     tag: st.currentTag,
-                     cycleIndex: st.cycleIndex,
-                     assumptions: 0,
-                     sources: .none,
-                     locus: st.locus,
-                     isValidVpp: validation.isValid,
-                     validationIssues: validation.issues
-                 )
-                if !block.messages.contains(where: { $0.id == pendingMessage.id }) {
-                            block.messages.append(blockAssistant)
-                        }
-                 block.updatedAt = Date()
-                store.update(block: block)
-             }
+            let st2 = vppRuntime.state
+            let validation = vppRuntime.validateAssistantReply(response.text)
+            let parsedTable = vppRuntime.parseSourcesTable(from: response.text)
+            let assistantSourcesSummary: VppSources = {
+                if !parsedTable.isEmpty { return VppSources.summary(for: parsedTable) }
+                if let token = vppRuntime.extractFooterSourcesValue(response.text),
+                   let simple = VppSources(rawValue: token) {
+                    return simple
+                }
+                return .none
+            }()
+
+            let assistantTimestamp = Date()
+            let blockAssistant = Message(
+                id: pendingMessage.id,
+                isUser: false,
+                timestamp: assistantTimestamp,
+                body: response.text,
+                tag: st2.currentTag,
+                cycleIndex: st2.cycleIndex,
+                assumptions: 0,
+                sources: assistantSourcesSummary,
+                sourcesTable: parsedTable,
+                locus: st2.locus,
+                isValidVpp: validation.isValid,
+                validationIssues: validation.issues
+            )
+            store.appendMessage(to: conversationID, blockAssistant)
+
             
              // ✅ keep console list in sync with new/updated block
              syncConsoleSessionsFromBlocks()

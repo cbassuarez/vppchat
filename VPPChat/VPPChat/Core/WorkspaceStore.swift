@@ -277,6 +277,15 @@ final class WorkspaceStore: ObservableObject {
         // Production seed: single canonical Welcome only
             _ = ensureWelcomeConversationSeeded()
     }
+    
+    @MainActor
+    func appendMessage(to blockID: Block.ID, _ message: Message) {
+        guard var block = blocks[blockID] else { return }
+        if block.messages.contains(where: { $0.id == message.id }) { return }
+        block.messages.append(message)
+        block.updatedAt = .now
+        blocks[blockID] = block
+    }
 
     func allBlocksSortedByUpdatedAtDescending() -> [Block] {
         blocks.values.sorted { $0.updatedAt > $1.updatedAt }

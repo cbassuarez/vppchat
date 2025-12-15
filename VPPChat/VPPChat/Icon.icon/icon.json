@@ -1,0 +1,176 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "solid" : "display-p3:0.06275,0.09020,0.16078,1.00000"
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "solid" : "srgb:0.06275,0.09020,0.16078,1.00000"
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "blur-material" : 0.62,
+      "layers" : [
+        {
+          "blend-mode" : "darken",
+          "fill" : {
+            "solid" : "display-p3:1.00000,1.00000,1.00000,1.00000"
+          },
+          "glass" : true,
+          "image-name" : "vpp_icon_assets_dark2.png",
+          "name" : "vpp_icon_assets_dark2",
+          "opacity" : 1,
+          "position" : {
+            "scale" : 1.19,
+            "translation-in-points" : [
+              -190.140625,
+              -3.2265625
+            ]
+          }
+        },
+        {
+          "blend-mode" : "lighten",
+          "fill" : {
+            "linear-gradient" : [
+              "display-p3:0.00000,0.49035,1.00000,1.00000",
+              "display-p3:0.00030,0.90173,0.78317,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0.9448618093941513
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.23315288605981244
+              }
+            }
+          },
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "vpp_icon_assets_dark2.png",
+          "name" : "vpp_icon_assets_dark2",
+          "opacity" : 1,
+          "position" : {
+            "scale" : 1.19,
+            "translation-in-points" : [
+              -190.140625,
+              -3.2265625
+            ]
+          }
+        },
+        {
+          "blend-mode" : "normal",
+          "fill" : {
+            "linear-gradient" : [
+              "display-p3:0.00102,0.67337,1.00000,1.00000",
+              "display-p3:0.00000,0.98039,0.91624,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 1
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.3
+              }
+            }
+          },
+          "glass" : false,
+          "image-name" : "vpp_icon_assets_dark2.png",
+          "name" : "vpp_icon_assets_dark2",
+          "position" : {
+            "scale" : 1.19,
+            "translation-in-points" : [
+              -190.140625,
+              -3.2265625
+            ]
+          }
+        },
+        {
+          "blend-mode-specializations" : [
+            {
+              "value" : "multiply"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "overlay"
+            }
+          ],
+          "fill" : {
+            "linear-gradient" : [
+              "display-p3:0.89020,0.90980,0.93725,1.00000",
+              "display-p3:0.84870,0.85708,0.94510,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5000000000000003,
+                "y" : 0.09070753301320507
+              },
+              "stop" : {
+                "x" : 0.5000000000000003,
+                "y" : 1
+              }
+            }
+          },
+          "glass" : true,
+          "image-name" : "vpp_icon_assets_dark.png",
+          "name" : "vpp_icon_assets_dark",
+          "opacity" : 1,
+          "position" : {
+            "scale" : 1.19,
+            "translation-in-points" : [
+              104.395625,
+              -3.2265625
+            ]
+          }
+        },
+        {
+          "blend-mode-specializations" : [
+            {
+              "value" : "normal"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "overlay"
+            }
+          ],
+          "fill" : {
+            "solid" : "display-p3:0.00000,1.00000,0.96257,1.00000"
+          },
+          "glass" : true,
+          "image-name" : "vpp_icon_assets_dark.png",
+          "name" : "vpp_icon_assets_dark",
+          "position" : {
+            "scale" : 1.19,
+            "translation-in-points" : [
+              104.395625,
+              -3.2265625
+            ]
+          }
+        }
+      ],
+      "lighting" : "individual",
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.91
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 1
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

@@ -85,12 +85,18 @@ final class VppRuntime: ObservableObject {
         return parts.joined(separator: " ")
     }
 
-    func makeFooter(sources: VppSources) -> String {
+    func makeFooter(sources: VppSources, sourceTokens: [String]? = nil) -> String {
         let tagComponent = "<\(state.currentTag.rawValue)_\(state.cycleIndex)>"
+        let sourcesValue: String = {
+                    if let tokens = sourceTokens, !tokens.isEmpty {
+                        return tokens.joined(separator: ",")
+                    }
+                    return sources.rawValue
+                }()
         var parts: [String] = [
             "Version=v1.4",
             "Tag=\(tagComponent)",
-            "Sources=<\(sources.rawValue)>",
+            "Sources=<\(sourcesValue)>",
             "Assumptions=\(state.assumptions)",
             "Cycle=\(state.cycleIndex)/3"
         ]
@@ -134,6 +140,54 @@ final class VppRuntime: ObservableObject {
 }
 
 extension VppRuntime {
+    /// Extract `Sources=<...>` value from the last footer line (if present).
+        func extractFooterSourcesValue(_ text: String) -> String? {
+            guard let lastLine = text.split(separator: "\n", omittingEmptySubsequences: false).last.map(String.init) else {
+                return nil
+            }
+            guard lastLine.hasPrefix("[") else { return nil }
+            // naive but robust enough: find "Sources=<" ... ">"
+            guard let range = lastLine.range(of: "Sources=<") else { return nil }
+            let tail = lastLine[range.upperBound...]
+            guard let end = tail.firstIndex(of: ">") else { return nil }
+            return String(tail[..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    
+        /// Parse a VPP "Sources:" markdown table (if present) from a reply body.
+        func parseSourcesTable(from text: String) -> [VppSourceRef] {
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            guard let start = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "Sources:" }) else {
+                return []
+            }
+            // Expect:
+            // Sources:
+            // | id | kind | ref |
+            // | --- | --- | --- |
+            var i = start + 1
+            guard i + 1 < lines.count else { return [] }
+            guard lines[i].contains("| id |") else { return [] }
+            i += 2 // skip header + separator
+    
+            var out: [VppSourceRef] = []
+            while i < lines.count {
+                let line = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+                if line.isEmpty { break }
+                if line.hasPrefix("[") { break } // footer begins
+                guard line.hasPrefix("|"), line.contains("|") else { break }
+    
+                // Split on "|", trimming; expect: ["", " s1 ", " web ", " example.com/* ", ""]
+                let cols = line.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+                guard cols.count >= 5 else { i += 1; continue }
+                let id = cols[1]
+                let kindRaw = cols[2]
+                let ref = cols[3]
+                if let kind = VppSourceKind(rawValue: kindRaw), !id.isEmpty, !ref.isEmpty {
+                    out.append(VppSourceRef(id: id, kind: kind, ref: ref))
+                }
+                i += 1
+            }
+            return out
+        }
     /// Ingests a footer line like:
     /// [Version=v1.4 | Tag=<c_3> | Sources=<web> | Assumptions=2 | Cycle=3/3 | Locus=SomeThread]
     /// and updates state.currentTag, state.cycleIndex, state.locus accordingly.

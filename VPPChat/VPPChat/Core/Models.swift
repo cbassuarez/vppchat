@@ -35,6 +35,7 @@ struct Message: Identifiable, Hashable {
     var cycleIndex: Int
     var assumptions: Int
     var sources: VppSources
+    var sourcesTable: [VppSourceRef] = []
     var locus: String?
     var isValidVpp: Bool
     var validationIssues: [String]

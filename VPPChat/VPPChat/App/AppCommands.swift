@@ -27,6 +27,11 @@ struct AppCommands: Commands {
                 shellMode = .atlas
             }
             .keyboardShortcut("3", modifiers: .command)
+            Button("Copy Last Assistant Message") {
+                workspaceViewModel.copyLastAssistantMessage()
+            }
+            .keyboardShortcut("c", modifiers: [.command, .shift])
+
         }
 
         CommandMenu("Command Space") {

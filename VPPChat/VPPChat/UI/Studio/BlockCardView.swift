@@ -34,26 +34,17 @@ struct BlockCardView: View {
             switch block.kind {
             case .conversation:
                 ForEach(Array(block.messages.suffix(2)), id: \.id) { message in
-                    Text(message.body)
-                        .font(.system(size: 12))
-                        .foregroundStyle(StudioTheme.Colors.textPrimary)
-                        .lineLimit(3)
+                    MarkdownPreviewText(text: message.body, maxLines: 3, theme: .studio)
                 }
 
             case .document:
                 if let text = block.documentText {
-                    Text(text)
-                        .font(.system(size: 12))
-                        .foregroundStyle(StudioTheme.Colors.textPrimary)
-                        .lineLimit(4)
+                    MarkdownPreviewText(text: text, maxLines: 4, theme: .studio)
                 }
 
             case .reference:
                 if let text = block.documentText {
-                    Text(text)
-                        .font(.system(size: 12))
-                        .foregroundStyle(StudioTheme.Colors.textPrimary)
-                        .lineLimit(3)
+                    MarkdownPreviewText(text: text, maxLines: 3, theme: .studio)
                 }
             }
 

@@ -21,6 +21,13 @@ public enum VppSeverity: String, Codable, Hashable {
 public enum VppSources: String, Codable, Hashable {
     case none
     case web
+    case mixed
+
+    static func summary(for refs: [VppSourceRef]) -> VppSources {
+        guard !refs.isEmpty else { return .none }
+        let kinds = Set(refs.map(\.kind))
+        return (kinds.count == 1 && kinds.contains(.web)) ? .web : .mixed
+    }
 }
 
 public struct VppModifiers: Codable, Hashable {

@@ -11,7 +11,10 @@ struct SceneCanvasView: View {
             ScrollView {
                 LazyVStack(spacing: 12) {
                     ForEach(vm.store.blocks(in: scene)) { block in
-                        BlockCardView(block: block)
+                        BlockCardView(
+                                block: block,
+                                isSelected: vm.selectedBlockID == block.id
+                            )
                                 .onTapGesture {
                                     vm.select(block: block)
                                 }
@@ -50,12 +53,13 @@ struct StudioComposerView: View {
     @State private var modifiers = VppModifiers()
     @State private var sources: VppSources = .none
     @State private var assumptions: AssumptionsConfig = .none
-
+    @State private var sourcesTable: [VppSourceRef] = []
     var body: some View {
         ComposerView(
             draft: $draft,
             modifiers: $modifiers,
             sources: $sources,
+            sourcesTable: $sourcesTable,
             assumptions: $assumptions,
             runtime: vm.vppRuntime,
             requestStatus: vm.consoleSessions.first(where: { $0.id == vm.selectedBlockID })?.requestStatus ?? .idle,
@@ -136,13 +140,17 @@ struct StudioComposerView: View {
                 temperature: vm.consoleTemperature,
                 contextStrategy: vm.consoleContextStrategy
             )
-        
+        vm.selectedSessionID = targetBlock.id
+        vm.touchConsoleSession(targetBlock.id)
+
             Task { @MainActor in
                 await vm.sendPrompt(composedText, in: targetBlock.id, config: cfg, assumptions: assumptions)
             }
         
             draft = ""
             assumptions = .none
+            sourcesTable = []
+            sources = .none
     }
     private func deriveConversationTitle(from text: String, fallback: String) -> String {
         let firstLine = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? ""

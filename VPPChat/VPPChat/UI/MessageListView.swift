@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct MessageListView: View {
     var sessionID: ConsoleSession.ID?
@@ -164,6 +165,7 @@ struct ConsoleMessageRow: View {
 
 struct ExistingBubbleView: View {
     let message: ConsoleMessage
+    @State private var didCopyMessage = false
 
     private var authorLabel: String {
         switch message.role {
@@ -194,12 +196,37 @@ struct ExistingBubbleView: View {
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }
 
-            StreamingMessageBody(message: message)
+            MarkdownMessageBody(text: message.text, role: message.role)
 
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
+
+                if message.role == .assistant {
+                    Button {
+                        let s = MarkdownCopyText.renderedText(from: message.text)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(s, forType: .string)
+
+                        didCopyMessage = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                            didCopyMessage = false
+                        }
+                    } label: {
+                        Image(systemName: didCopyMessage ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.Colors.structuralAccent)
+                            .padding(6)
+                            .background(AppTheme.Colors.surface1)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(AppTheme.Colors.borderSoft, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy message")
+                }
+
                 validityDot
             }
+
         }
         .padding(AppTheme.Spacing.cardInner)
         .background(

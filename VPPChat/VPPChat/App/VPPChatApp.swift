@@ -229,7 +229,7 @@ struct VPPChatApp: App {
                     window.titlebarAppearsTransparent = true
                     window.titleVisibility = .hidden
                     window.styleMask.insert(.fullSizeContentView)
-                    window.isMovableByWindowBackground = true
+                    window.isMovableByWindowBackground = false
                     window.backgroundColor = .clear
                 }
             )

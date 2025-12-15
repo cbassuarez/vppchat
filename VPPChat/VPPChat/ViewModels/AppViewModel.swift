@@ -276,7 +276,8 @@ extension AppViewModel {
                     tag: .c,                       // conservative default; your VPP parser can refine later
                     cycleIndex: runtime.state.cycleIndex,
                     assumptions: runtime.state.assumptions,
-                    sources: .none,
+                    sources: cm.sources,
+                    sourcesTable: cm.sourcesTable,
                     locus: runtime.state.locus,
                     isValidVpp: cm.vppValidation?.isValid ?? true,
                     validationIssues: cm.vppValidation?.issues ?? []

@@ -4,8 +4,10 @@ struct ComposerView: View {
     @Binding var draft: String
     @Binding var modifiers: VppModifiers
     @Binding var sources: VppSources
+    @Binding var sourcesTable: [VppSourceRef]
     @Binding var assumptions: AssumptionsConfig
     @State private var showAssumptionsModal = false
+    @State private var showSourcesModal = false
 
     @ObservedObject var runtime: VppRuntime
     var requestStatus: RequestStatus
@@ -44,6 +46,9 @@ struct ComposerView: View {
             editorBand
             actionBand
         }
+        .onChange(of: sourcesTable) { _ in
+                    sources = VppSources.summary(for: sourcesTable)
+                }
         .padding(AppTheme.Spacing.outerHorizontal)
         .panelBackground()
         .animation(
@@ -123,7 +128,33 @@ struct ComposerView: View {
         }
         .buttonStyle(.plain)
     }
-
+    init(
+            draft: Binding<String>,
+            modifiers: Binding<VppModifiers>,
+            sources: Binding<VppSources>,
+            sourcesTable: Binding<[VppSourceRef]>,
+            assumptions: Binding<AssumptionsConfig>,
+            runtime: VppRuntime,
+            requestStatus: RequestStatus,
+            sendAction: @escaping () -> Void,
+            tagSelection: @escaping (VppTag) -> Void,
+            stepCycle: @escaping () -> Void,
+            resetCycle: @escaping () -> Void,
+            focusBinding: FocusState<Bool>.Binding? = nil
+        ) {
+            self._draft = draft
+            self._modifiers = modifiers
+            self._sources = sources
+            self._sourcesTable = sourcesTable
+            self._assumptions = assumptions
+            self.runtime = runtime
+            self.requestStatus = requestStatus
+            self.sendAction = sendAction
+            self.tagSelection = tagSelection
+            self.stepCycle = stepCycle
+            self.resetCycle = resetCycle
+            self.focusBinding = focusBinding
+        }
     // Top: cycle (read-only), assumptions, locus, sources
     private var metaBand: some View {
         HStack(spacing: AppTheme.Spacing.base * 1.5) {
@@ -203,12 +234,48 @@ struct ComposerView: View {
                             sources = .web
                         }
                     }
+                    Button {
+                                            showSourcesModal = true
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Text(sourcesTable.isEmpty ? "Sources" : "Sources \(sourcesTable.count)")
+                                                Image(systemName: "chevron.down")
+                                                    .font(.system(size: 10, weight: .semibold))
+                                            }
+                                            .font(.system(size: 11, weight: .medium))
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(
+                                                Capsule()
+                                                    .fill((sources == .web || !sourcesTable.isEmpty)
+                                                          ? theme.structuralAccent.opacity(0.22)
+                                                          : AppTheme.Colors.surface0)
+                                            )
+                                            .overlay(
+                                                Capsule()
+                                                    .stroke((sources == .web || !sourcesTable.isEmpty)
+                                                            ? theme.structuralAccent
+                                                            : AppTheme.Colors.borderSoft,
+                                                            lineWidth: (sources == .web || !sourcesTable.isEmpty) ? 1.3 : 1)
+                                            )
+                                            .foregroundStyle(AppTheme.Colors.textSecondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .sheet(isPresented: $showSourcesModal) {
+                                            SourcesModal(sources: $sources, sourcesTable: $sourcesTable)
+                                        }
+                
                 }
             }
 
             Spacer(minLength: 0)
         }
     }
+    
+    // Keep coarse summary in sync for any legacy consumers.
+       private func recomputeSourcesSummary() {
+           sources = VppSources.summary(for: sourcesTable)
+       }
 
     // Tag row just above editor — inline E / echo behavior is handled via handleTagTap(_:)
     private var tagBand: some View {
@@ -566,4 +633,11 @@ extension AssumptionsConfig {
         if case .custom = self { return true }
         return false
     }
+    var persistedCount: Int {
+            switch self {
+            case .none: return 0
+            case .zero: return 0
+            case .custom(let items): return items.count
+            }
+        }
 }

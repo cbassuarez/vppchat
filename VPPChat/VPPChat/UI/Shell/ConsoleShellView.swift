@@ -30,12 +30,11 @@ struct ConsoleShellView: View {
             }
         }
         .onAppear {
+            workspace.ensureDefaultConsoleSession()
             workspace.syncConsoleSessionsFromBlocks()
             print("ConsoleShellView workspace instance: \(workspace.instanceID)")
-            appViewModel.ensureDefaultSession()
-            appViewModel.syncWorkspaceFromStore()
-            workspace.selectedSessionID = appViewModel.selectedSessionID
         }
+
     }
 
     private func sessionBinding<T>(keyPath: WritableKeyPath<ConsoleSession, T>, default defaultValue: T) -> Binding<T> {
@@ -68,7 +67,6 @@ struct ConsoleShellView: View {
 
 private struct ConsoleSessionSidebar: View {
     @EnvironmentObject private var workspace: WorkspaceViewModel
-    @EnvironmentObject private var appViewModel: AppViewModel
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -77,7 +75,7 @@ private struct ConsoleSessionSidebar: View {
                     .foregroundStyle(AppTheme.Colors.textPrimary)
                 Spacer()
                 Button {
-                    appViewModel.createNewSession(in: appViewModel.selectedFolder)
+                    _ = workspace.createConsoleConversation()
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .bold))
@@ -86,13 +84,11 @@ private struct ConsoleSessionSidebar: View {
             }
 
             List(selection: selectionBinding) {
-                ForEach(appViewModel.store.sessions) { session in
-                    Text(session.name)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                        .tag(session.id as Session.ID?)
+                ForEach(workspace.consoleSessions) { session in
+                    Text(session.title)
+                        .tag(session.id as ConsoleSession.ID?)
                         .onTapGesture {
-                            appViewModel.selectSession(session)
+                            workspace.selectedSessionID = session.id
                             workspace.touchConsoleSession(session.id)
                         }
                 }
@@ -105,12 +101,12 @@ private struct ConsoleSessionSidebar: View {
         .panelBackground()
     }
 
-    private var selectionBinding: Binding<Session.ID?> {
+    private var selectionBinding: Binding<ConsoleSession.ID?> {
         Binding(
-            get: { appViewModel.selectedSessionID },
+            get: { workspace.selectedSessionID },
             set: { newValue in
-                appViewModel.selectedSessionID = newValue
                 workspace.selectedSessionID = newValue
+                if let id = newValue { workspace.touchConsoleSession(id) }
             }
         )
     }
@@ -127,7 +123,7 @@ private struct ConsoleSessionView: View {
     @State private var modifiers: VppModifiers = VppModifiers()
     @State private var sources: VppSources = .none
     @State private var assumptions: AssumptionsConfig = .none
-
+    @State private var sourcesTable: [VppSourceRef] = []
     let session: ConsoleSession
 
     private var currentMessages: [ConsoleMessage] {
@@ -146,6 +142,7 @@ private struct ConsoleSessionView: View {
                 draft: $draftText,
                 modifiers: $modifiers,
                 sources: $sources,
+                sourcesTable: $sourcesTable,
                 assumptions: $assumptions,
                 runtime: workspace.vppRuntime,
                 requestStatus: workspace.selectedConsoleSession?.requestStatus ?? .idle,
@@ -178,7 +175,8 @@ private struct ConsoleSessionView: View {
         let composedText = "\(header)\n\(trimmed)"
 
         draftText = ""
-
+        sourcesTable = []
+        sources = .none
         let config = WorkspaceViewModel.LLMRequestConfig(
             modelID: llmConfig.defaultModelID,
             temperature: llmConfig.defaultTemperature,

@@ -10,7 +10,8 @@ struct SessionView: View {
 
     @StateObject private var viewModel: SessionViewModel
     @State private var assumptions: AssumptionsConfig = .none
-
+    
+    @State private var sourcesTable: [VppSourceRef] = []
     private let session: Session
 
     init(session: Session, appViewModel: AppViewModel) {
@@ -53,6 +54,7 @@ struct SessionView: View {
                 draft: $viewModel.draftText,
                 modifiers: $viewModel.currentModifiers,
                 sources: $viewModel.currentSources,
+                sourcesTable: $sourcesTable,
                 assumptions: $assumptions,
                 runtime: appViewModel.runtime,
                 requestStatus: requestStatus,
@@ -115,6 +117,8 @@ struct SessionView: View {
 
         // ✅ reset after queueing send
         assumptions = .none
+        sourcesTable = []
+        viewModel.currentSources = .none
     }
 
     private func makeOutgoingUserBody(
