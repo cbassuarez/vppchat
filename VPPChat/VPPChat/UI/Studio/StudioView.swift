@@ -35,6 +35,9 @@ struct StudioView: View {
 
         }
         .padding(18)
+        .onAppear {
+            print("StudioView workspace instance: \(vm.instanceID)")
+        }
     }
     
     
