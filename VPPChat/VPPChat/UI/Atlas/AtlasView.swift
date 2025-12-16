@@ -317,13 +317,16 @@ struct AtlasView: View {
                                     sendToConsole(block: block)
                                 }
                             }
-                            .onTapGesture {
-                                selectedIndex = index
-                            }
-                            .onTapGesture(count: 2) {
-                                selectedIndex = index
-                                openBlock(block)
-                            }
+                            .contentShape(Rectangle())
+                            .gesture(
+                                TapGesture(count: 2).onEnded {
+                                    selectedIndex = index
+                                    sendToConsole(block: block)   // ✅ double click → Console
+                                }
+                                .exclusively(before: TapGesture(count: 1).onEnded {
+                                    selectedIndex = index         // ✅ single click → select
+                                })
+                            )
                     }
                     .padding(8)
                 }

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Kind popover plumbing (Atlas-style)
 
@@ -26,6 +27,9 @@ struct SourcesModal: View {
 
     @State private var draftSources: VppSources = .none
     @State private var draftTable: [VppSourceRef] = []
+    
+    @State private var isPickingFile: Bool = false
+    @State private var filePickTargetID: String? = nil
 
     // which row's kind dropdown is open
     @State private var activeKindPickerID: String? = nil
@@ -53,7 +57,11 @@ struct SourcesModal: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Choose whether this send should use web sources, and review any attached source references. These are applied at send-time (not stored in the transcript).")
+                    Text("""
+                    Web search controls whether the assistant may fetch new web pages for this send.
+                    Attachments are explicit references you provide (files/URLs/repos/ssh). Attachments are included even when Web search is Off.
+                    “No sources” means: Web search Off + 0 attachments.
+                    """)
                         .font(.system(size: 12))
                         .foregroundStyle(AppTheme.Colors.textSecondary)
 
@@ -73,6 +81,27 @@ struct SourcesModal: View {
         .frame(minWidth: 560, minHeight: 440)
         .background(AppTheme.Colors.surface0)
         .onAppear { seedFromBinding() }
+        .fileImporter(
+          isPresented: $isPickingFile,
+          allowedContentTypes: [.item],
+          allowsMultipleSelection: false
+        ) { result in
+          guard let id = filePickTargetID else { return }
+          filePickTargetID = nil
+
+          switch result {
+          case .success(let urls):
+            guard let url = urls.first else { return }
+            if let i = draftTable.firstIndex(where: { $0.id == id }) {
+              draftTable[i].kind = .file
+              draftTable[i].ref = url.path
+              focusedSourceID = id
+            }
+          case .failure:
+            break
+          }
+        }
+
 
         // Atlas-style anchored kind dropdown
         .overlayPreferenceValue(SourceKindAnchorKey.self) { anchors in
@@ -119,7 +148,7 @@ struct SourcesModal: View {
     private var modePicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Mode")
+                Text("Web search")
                     .font(.system(size: 11, weight: .semibold))
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.Colors.textSubtle)
@@ -127,11 +156,11 @@ struct SourcesModal: View {
             }
 
             HStack(spacing: 6) {
-                modeChip("None", isSelected: draftSources == .none) {
+                modeChip("Off", isSelected: draftSources == .none) {
                     withAnimation(popAnimation) { draftSources = .none }
                 }
 
-                modeChip("Web", isSelected: draftSources == .web) {
+                modeChip("On", isSelected: draftSources == .web) {
                     withAnimation(popAnimation) { draftSources = .web }
                 }
 
@@ -165,7 +194,7 @@ struct SourcesModal: View {
     private var sourcesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Attached sources")
+                Text("Attachments")
                     .font(.system(size: 11, weight: .semibold))
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.Colors.textSubtle)
@@ -204,7 +233,7 @@ struct SourcesModal: View {
                 Text("No sources attached.")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(AppTheme.Colors.textPrimary)
-                Text("If you expected items here, ensure `sourcesTable` is being passed into `ComposerView` from the parent view.")
+                Text("Add a file, URL, repo, or other reference to include with this send.")
                     .font(.system(size: 11))
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }
@@ -234,23 +263,56 @@ struct SourcesModal: View {
                 HStack(spacing: 8) {
                     kindChip(ref: ref)
 
-                    TextField(placeholder(for: ref.wrappedValue.kind), text: Binding(
+                    if ref.wrappedValue.kind == .file {
+                      HStack(spacing: 8) {
+                        TextField("Choose a file…", text: Binding(
+                          get: { ref.wrappedValue.ref },
+                          set: { ref.wrappedValue.ref = $0 }
+                        ))
+                        .textFieldStyle(.plain)
+                        .font(AppTheme.Typography.mono(12))
+                        .disableAutocorrection(true)
+                        .padding(10)
+                        .background(AppTheme.Colors.surface1)
+                        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+                        .overlay(
+                          RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                            .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                        )
+                        .focused($focusedSourceID, equals: refID)
+
+                        Button("Browse…") {
+                          beginPickFile(for: refID)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(AppTheme.Colors.surface1)
+                        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+                        .overlay(
+                          RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                            .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                        )
+                        .foregroundStyle(AppTheme.Colors.textSecondary)
+                      }
+                    } else {
+                      TextField(placeholder(for: ref.wrappedValue.kind), text: Binding(
                         get: { ref.wrappedValue.ref },
                         set: { ref.wrappedValue.ref = $0 }
-                    ))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12, design: .monospaced))
-                    /// TODO: implement
-//                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .padding(10)
-                    .background(AppTheme.Colors.surface1)
-                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
-                    .overlay(
+                      ))
+                      .textFieldStyle(.plain)
+                      .font(AppTheme.Typography.mono(12))
+                      .disableAutocorrection(true)
+                      .padding(10)
+                      .background(AppTheme.Colors.surface1)
+                      .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+                      .overlay(
                         RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                            .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                    )
-                    .focused($focusedSourceID, equals: refID)
+                          .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                      )
+                      .focused($focusedSourceID, equals: refID)
+                    }
+
                 }
 
                 Text(hint(for: ref.wrappedValue.kind))
@@ -278,6 +340,20 @@ struct SourcesModal: View {
                 .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
         )
     }
+    
+    private func beginPickFile(for id: String) {
+      filePickTargetID = id
+      isPickingFile = true
+    }
+
+    private func kindLabel(_ kind: VppSourceKind) -> String {
+      switch kind {
+      case .web:  return "URL"
+      case .repo: return "REPO"
+      case .file: return "FILE"
+      case .ssh:  return "SSH"
+      }
+    }
 
     private func kindChip(ref: Binding<VppSourceRef>) -> some View {
         let id = ref.wrappedValue.id
@@ -288,7 +364,7 @@ struct SourcesModal: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Text(ref.wrappedValue.kind.rawValue.uppercased())
+                Text(kindLabel(ref.wrappedValue.kind))
                     .font(.system(size: 10, weight: .semibold))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
@@ -337,7 +413,7 @@ struct SourcesModal: View {
                     activeKindPickerID = nil
                 } label: {
                     HStack {
-                        Text(kind.rawValue)
+                        Text(kind == .web ? "URL" : kind.rawValue)
                             .font(.system(size: 12))
                         Spacer()
                         if isSelected {
@@ -494,16 +570,16 @@ struct SourcesModal: View {
 
     private func placeholder(for kind: VppSourceKind) -> String {
         switch kind {
-        case .web:  return "domain/page/* or full URL"
+        case .web:  return "https://example.com/article"
         case .repo: return "github.com/owner/repo (optional #path @ref)"
-        case .file: return "/path/to/file"
+        case .file: return "Choose a file…"
         case .ssh:  return "user@host:/path or ssh://user@host/path"
         }
     }
 
     private func hint(for kind: VppSourceKind) -> String {
         switch kind {
-        case .web:  return "Example: wikipedia.org/wiki/Spinoza"
+        case .web:  return "Example: https://wikipedia.org/wiki/Spinoza"
         case .repo: return "Example: github.com/StageDevices/VPPChat#UI @main"
         case .file: return "Example: /Users/seb/Desktop/notes.md"
         case .ssh:  return "Example: seb@10.0.0.12:/var/log/app.log"

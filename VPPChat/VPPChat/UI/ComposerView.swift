@@ -162,13 +162,13 @@ struct ComposerView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     Text("CYCLE")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(AppTheme.Typography.metaLabel)
                         .textCase(.uppercase)
                         .foregroundStyle(AppTheme.Colors.textSubtle)
 
                     HStack(spacing: 6) {
                         Text("\(runtime.state.cycleIndex) / 3")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(AppTheme.Typography.metaValue)
                             .foregroundStyle(AppTheme.Colors.textSecondary)
                     }
                     .padding(.horizontal, 8)
@@ -180,7 +180,7 @@ struct ComposerView: View {
                 // Assumptions as discrete chips
                 HStack(spacing: 6) {
                     Text("ASSUMPTIONS")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(AppTheme.Typography.metaLabel)
                         .textCase(.uppercase)
                         .foregroundStyle(AppTheme.Colors.textSubtle)
 
@@ -200,7 +200,7 @@ struct ComposerView: View {
             // Locus + sources
             VStack(alignment: .leading, spacing: 6) {
                 Text("LOCUS")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(AppTheme.Typography.metaLabel)
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.Colors.textSubtle)
 
@@ -301,7 +301,7 @@ struct ComposerView: View {
                 Group {
                     if let focusBinding {
                         TextEditor(text: $draft)
-                            .font(.system(size: 14, weight: .regular))
+                            .font(AppTheme.Typography.mono(14))
                             .foregroundStyle(AppTheme.Colors.textPrimary)
                             .scrollContentBackground(.hidden)
                             .background(Color.clear)
@@ -310,7 +310,7 @@ struct ComposerView: View {
                             .padding(.vertical, AppTheme.Spacing.base * 1.2)
                     } else {
                         TextEditor(text: $draft)
-                            .font(.system(size: 14, weight: .regular))
+                            .font(AppTheme.Typography.mono(14))
                             .foregroundStyle(AppTheme.Colors.textPrimary)
                             .scrollContentBackground(.hidden)
                             .background(Color.clear)
@@ -344,7 +344,7 @@ struct ComposerView: View {
                     Image(systemName: "sparkles")
                         .font(.system(size: 11, weight: .medium))
                     Text("Quality")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(AppTheme.Typography.chip)
                         .textCase(.uppercase)
                     Image(systemName: isQualityExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
@@ -567,7 +567,7 @@ struct ComposerView: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(AppTheme.Typography.chip)
                 .textCase(.uppercase)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
@@ -598,7 +598,7 @@ struct ComposerView: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold))
+                .font(AppTheme.Typography.chip)
                 .textCase(.uppercase)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)

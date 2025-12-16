@@ -21,6 +21,11 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var consoleContextStrategy: LLMContextStrategy =
         LLMContextStrategy.allCases.first!
     
+    // new chat wizard
+    @Published var isNewEntityWizardPresented: Bool = false
+    @Published var newEntityWizardInitialKind: NewEntityKind? = nil
+
+    
     // Shell coordination
     @Published var currentShellMode: ShellMode = .atlas
     var switchToShell: ((ShellMode) -> Void)?
@@ -71,6 +76,55 @@ final class WorkspaceViewModel: ObservableObject {
             }
         }
     
+    @MainActor
+    func quickNewChat(openInConsole: Bool) {
+        // 1) Resolve (or create) a Track
+        let targetTrackID: Track.ID = selectedTrackID
+            ?? store.allProjects.first?.tracks.first
+            ?? ensureDefaultPathAndReturnTrackID()
+
+        // 2) Create a Scene in that Track (uses your existing helper below)
+        guard let scene = createScene(in: targetTrackID, title: "New Scene") else { return }
+        select(scene: scene)
+
+        // 3) Create a Conversation block in that Scene
+        let block = Block(
+            sceneID: scene.id,
+            kind: .conversation,
+            title: "Chat",
+            subtitle: nil,
+            messages: [],
+            documentText: nil,
+            isCanonical: false,
+            createdAt: .now,
+            updatedAt: .now
+        )
+        store.add(block: block)
+        select(block: block)
+        selectedSessionID = block.id
+        syncConsoleSessionsFromBlocks()
+
+        // 4) Only open Console if requested *and* user is already in Console
+        guard openInConsole, currentShellMode == .console else { return }
+
+        if let track = store.track(id: scene.trackID),
+           let project = store.project(id: track.projectID) {
+            _ = openConsole(for: block, project: project, track: track, scene: scene)
+            touchConsoleSessionForBlock(block.id)
+        }
+    }
+
+    @MainActor
+    private func ensureDefaultPathAndReturnTrackID() -> Track.ID {
+        if let trackID = store.allProjects.first?.tracks.first { return trackID }
+        let project = createProject(name: "Project 1")   // uses your existing helper
+        return project.tracks.first!
+    }
+
+    private func touchConsoleSessionForBlock(_ blockID: Block.ID) {
+        touchConsoleSession(blockID)
+    }
+
         @MainActor
         private func autoReplyIfNeeded() async {
             guard !isAutoReplyRunning else { return }
@@ -298,9 +352,15 @@ final class WorkspaceViewModel: ObservableObject {
     }
 
     @MainActor func uiSelectScene(_ sceneID: UUID) {
-        selectedSceneID = sceneID
+        if let scene = store.scene(id: sceneID) {
+            select(scene: scene)
+        } else {
+            selectedSceneID = sceneID
+            selectedBlockID = nil
+        }
         goToStudio()
     }
+
     @MainActor func uiSelectBlockInStudio(_ blockID: UUID, sceneID: UUID) {
         selectedSceneID = sceneID
         selectedBlockID = blockID
@@ -382,10 +442,19 @@ final class WorkspaceViewModel: ObservableObject {
         syncConsoleSessionsFromBlocks()
         if consoleSessions.isEmpty {
             let welcome = store.ensureWelcomeConversationSeeded()
-                syncConsoleSessionsFromBlocks()
-                selectedSessionID = welcome.id
-                return
+            syncConsoleSessionsFromBlocks()
+
+            // Default console session is welcome, but don't "pin" the block selection in Studio.
+            selectedSessionID = welcome.id
+
+            if let scene = store.scene(id: welcome.sceneID) {
+                select(scene: scene) // will clear selectedBlockID (see Fix 2)
+            } else {
+                selectedSceneID = welcome.sceneID
+                selectedBlockID = nil
             }
+            return
+        }
             if selectedSessionID == nil {
                 selectedSessionID = WorkspaceStore.canonicalWelcomeBlockID
             }
@@ -549,6 +618,19 @@ final class WorkspaceViewModel: ObservableObject {
 
     func select(scene: Scene) {
         selectedSceneID = scene.id
+        selectedBlockID = nil
+
+        // Keep Console pointing at this scene’s most recent conversation (if any),
+        // without forcing an immediate shell switch.
+        if let convo = store.blocks(in: scene)
+            .filter({ $0.kind == .conversation })
+            .sorted(by: { $0.updatedAt > $1.updatedAt })
+            .first
+        {
+            selectedSessionID = convo.id
+        } else {
+            selectedSessionID = nil
+        }
     }
 
     func selectNextScene() {
@@ -720,6 +802,15 @@ extension WorkspaceViewModel {
             CommandSpaceItem(
                 id: UUID(),
                 kind: .action,
+                title: "New Environment",
+                subtitle: "Create a new top-level environment",
+                iconName: "plus.square",
+                typeLabel: "ACTION",
+                payload: .newEnvironment
+            ),
+            CommandSpaceItem(
+                id: UUID(),
+                kind: .action,
                 title: "New Project",
                 subtitle: "Create a new project",
                 iconName: "plus.square.on.square",
@@ -857,74 +948,20 @@ extension WorkspaceViewModel {
 
     func performCommandSpaceItem(_ item: CommandSpaceItem) {
         switch item.payload {
-        case .session(let id):
-            if consoleSessions.contains(where: { $0.id == id }) {
-                selectedSessionID = id
-                touchConsoleSession(id)
-                goToConsole()
-            }
 
-        case .project(let id):
-            if let project = store.project(id: id) {
-                goToStudio()
-                select(project: project)
-            }
-
-        case .track(let projectID, let trackID):
-            if let project = store.project(id: projectID),
-               let track = store.track(id: trackID) {
-                goToStudio()
-                select(project: project)
-                select(track: track)
-            }
-
-        case .scene(let projectID, let trackID, let sceneID):
-            if let project = store.project(id: projectID),
-               let track = store.track(id: trackID),
-               let scene = store.scene(id: sceneID) {
-                goToStudio()
-                select(project: project)
-                select(track: track)
-                select(scene: scene)
-            }
-
-        case .block(let id):
-            guard let block = store.blocks[id],
-                  let scene = store.scene(id: block.sceneID),
-                  let track = store.track(id: scene.trackID),
-                  let project = store.project(id: track.projectID) else { return }
-
-            if currentShellMode == .console {
-                let session = openConsole(for: block, project: project, track: track, scene: scene)
-                touchConsoleSession(session.id)
-                goToConsole()
-            } else {
-                select(project: project)
-                select(track: track)
-                select(scene: scene)
-                goToStudio()
-            }
-
-        case .newSession:
-            let session = newConsoleSession()
-            touchConsoleSession(session.id)
-            goToConsole()
+        // ✅ Wizard-routed actions
+        case .newEnvironment:
+            presentNewEntityWizard(initialKind: .environment)
             isCommandSpaceVisible = false
 
         case .newProject:
-            let project = createProject()
-            goToStudio()
-            select(project: project)
+            presentNewEntityWizard(initialKind: .project)
             isCommandSpaceVisible = false
 
         case .newTrack(let projectID):
             let targetProjectID = projectID ?? selectedProjectID ?? store.allProjects.first?.id
-            guard let track = createTrack(in: targetProjectID) else { return }
-            if let project = store.project(id: track.projectID) {
-                goToStudio()
-                select(project: project)
-                select(track: track)
-            }
+            if let targetProjectID { selectedProjectID = targetProjectID }
+            presentNewEntityWizard(initialKind: .track)
             isCommandSpaceVisible = false
 
         case .newScene(let projectID, let trackID):
@@ -939,17 +976,115 @@ extension WorkspaceViewModel {
                 return selectedTrackID
             }()
 
-            guard let scene = resolvedTrackID.flatMap({ createScene(in: $0) }) else { return }
-            if let track = store.track(id: scene.trackID),
-               let project = store.project(id: track.projectID) {
+            if let resolvedTrackID {
+                selectedTrackID = resolvedTrackID
+                if let track = store.track(id: resolvedTrackID) {
+                    selectedProjectID = track.projectID
+                }
+            }
+
+            presentNewEntityWizard(initialKind: .scene)
+            isCommandSpaceVisible = false
+
+        // ✅ Existing behaviors (navigation)
+        case .session(let id):
+            if consoleSessions.contains(where: { $0.id == id }) {
+
+                // ✅ If this session corresponds to a workspace Block, sync Studio selection
+                if let block = store.block(id: id) {
+                    select(block: block) // sets project/track/scene/block IDs coherently
+                }
+
+                selectedSessionID = id
+                touchConsoleSession(id)
+                goToConsole()
+                isCommandSpaceVisible = false
+            }
+
+        case .project(let id):
+            if let project = store.project(id: id) {
+                goToStudio()
+                select(project: project)
+                isCommandSpaceVisible = false
+            }
+
+        case .track(let projectID, let trackID):
+            if let project = store.project(id: projectID),
+               let track = store.track(id: trackID) {
+                goToStudio()
+                select(project: project)
+                select(track: track)
+                isCommandSpaceVisible = false
+            }
+
+        case .scene(let projectID, let trackID, let sceneID):
+            if let project = store.project(id: projectID),
+               let track = store.track(id: trackID),
+               let scene = store.scene(id: sceneID) {
                 goToStudio()
                 select(project: project)
                 select(track: track)
                 select(scene: scene)
+                isCommandSpaceVisible = false
             }
+
+        case .block(let id):
+            guard let block = store.blocks[id],
+                  let scene = store.scene(id: block.sceneID),
+                  let track = store.track(id: scene.trackID),
+                  let project = store.project(id: track.projectID)
+            else { return }
+
+            if currentShellMode == .console {
+                let session = openConsole(for: block, project: project, track: track, scene: scene)
+                touchConsoleSession(session.id)
+                goToConsole()
+            } else {
+                select(project: project)
+                select(track: track)
+                select(scene: scene)
+                goToStudio()
+            }
+            isCommandSpaceVisible = false
+
+        // ✅ Keep this immediate (unless you want a “new session wizard” too)
+        case .newSession:
+            let session = newConsoleSession()
+            touchConsoleSession(session.id)
+            goToConsole()
             isCommandSpaceVisible = false
         }
     }
+    
+    @MainActor
+    func uiOpenSceneInConsole(_ sceneID: Scene.ID) {
+        guard let scene = store.scene(id: sceneID) else { return }
+
+        let convo = store.blocks(in: scene)
+            .filter { $0.kind == .conversation }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .first ?? {
+                let b = Block(
+                    sceneID: scene.id,
+                    kind: .conversation,
+                    title: "Chat",
+                    subtitle: nil,
+                    messages: [],
+                    documentText: nil,
+                    isCanonical: false,
+                    createdAt: .now,
+                    updatedAt: .now
+                )
+                store.add(block: b)
+                syncConsoleSessionsFromBlocks()
+                return b
+            }()
+
+        selectedSessionID = convo.id
+        touchConsoleSession(convo.id)
+        goToConsole()
+    }
+
 
     @discardableResult
     private func createProject(name: String? = nil) -> Project {
@@ -1498,6 +1633,64 @@ extension WorkspaceViewModel {
         selectedSessionID = newBlock.id
         selectedBlockID = newBlock.id
         return newBlock.id
+    }
+
+    @MainActor
+    func presentNewEntityWizard(initialKind: NewEntityKind? = nil) {
+        newEntityWizardInitialKind = initialKind
+        isNewEntityWizardPresented = true
+    }
+
+    @MainActor
+    func uiCreateViaWizard(
+        kind: NewEntityKind,
+        envID: UUID?,
+        projectID: UUID?,
+        trackID: UUID?,
+        name: String
+    ) throws -> UUID {
+        guard let repo else { throw NSError(domain: "Workspace", code: 1) }
+
+        let createdID: UUID
+
+        switch kind {
+        case .environment:
+            createdID = try repo.createEnvironment(name: name)
+            // no selection change required, but we can reload.
+        case .project:
+            guard let envID else { throw NSError(domain: "Workspace", code: 2) }
+            createdID = try repo.createProject(environmentID: envID, name: name)
+        case .track:
+            guard let projectID else { throw NSError(domain: "Workspace", code: 3) }
+            createdID = try repo.createTrack(projectID: projectID, name: name)
+        case .scene:
+            guard let trackID else { throw NSError(domain: "Workspace", code: 4) }
+            createdID = try repo.createScene(trackID: trackID, title: name)
+        }
+
+        try store.loadFromRepository()
+        reloadLibraryTree()
+
+        // Best-effort selection updates (no forced shell switch)
+        switch kind {
+        case .environment:
+            break
+        case .project:
+            selectedProjectID = createdID
+        case .track:
+            selectedTrackID = createdID
+            if let track = store.track(id: createdID) { selectedProjectID = track.projectID }
+        case .scene:
+            selectedSceneID = createdID
+            if let scene = store.scene(id: createdID) {
+                selectedTrackID = scene.trackID
+                if let track = store.track(id: scene.trackID) {
+                    selectedProjectID = track.projectID
+                }
+            }
+        }
+
+        return createdID
     }
 
 

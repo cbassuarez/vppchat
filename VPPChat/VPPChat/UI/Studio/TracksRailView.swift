@@ -3,7 +3,9 @@ import SwiftUI
 struct TracksRailView: View {
     @EnvironmentObject private var vm: WorkspaceViewModel
     @EnvironmentObject private var theme: ThemeManager
-
+    @State private var hoveredSceneID: Scene.ID?
+    @State private var hoveredBlockID: Block.ID?
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -86,26 +88,68 @@ struct TracksRailView: View {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(track.scenes, id: \.self) { sceneID in
                     if let scene = vm.store.scene(id: sceneID) {
-                        Button {
-                            vm.select(track: track)
-                            vm.select(scene: scene)
-                        } label: {
-                            HStack {
-                                Text(scene.title)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(vm.selectedSceneID == scene.id
-                                                     ? theme.structuralAccent
-                                                     : StudioTheme.Colors.textSecondary)
-                                Spacer()
+                        HStack(spacing: 8) {
+                            Text(scene.title)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(vm.selectedSceneID == scene.id
+                                                 ? theme.structuralAccent
+                                                 : StudioTheme.Colors.textSecondary)
+
+                            Spacer()
+
+                            let showTrash = (hoveredSceneID == scene.id)
+
+                            Button {
+                                vm.uiTrashScene(scene.id, title: scene.title)
+                            } label: {
+                                Image(systemName: "trash.fill")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.red)
+                                    .padding(6)
+                                    .background(
+                                        Circle()
+                                            .fill(Color.red.opacity(0.14))
+                                    )
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.red.opacity(0.25), lineWidth: 1)
+                                    )
                             }
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(vm.selectedSceneID == scene.id ? theme.structuralAccent.opacity(0.16) : Color.clear)
-                            )
+                            .buttonStyle(.plain)
+                            .opacity(showTrash ? 1 : 0)
+                            .allowsHitTesting(showTrash)
+                            
                         }
-                        .buttonStyle(.plain)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(vm.selectedSceneID == scene.id ? theme.structuralAccent.opacity(0.16) : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                        .gesture(
+                            TapGesture(count: 2).onEnded {
+                                vm.select(track: track)
+                                vm.select(scene: scene)
+                                vm.uiOpenSceneInConsole(scene.id)
+                            }
+                            .exclusively(before: TapGesture(count: 1).onEnded {
+                                vm.select(track: track)
+                                vm.select(scene: scene)
+                            })
+                        )
+                        #if os(macOS)
+                        .onHover { isHovering in
+                            hoveredSceneID = isHovering ? scene.id : (hoveredSceneID == scene.id ? nil : hoveredSceneID)
+                        }
+                        #endif
+                        .animation(.easeInOut(duration: 0.12), value: hoveredSceneID)
+                        .contextMenu {
+                            Button("Move to Trash") {
+                                vm.uiTrashScene(scene.id, title: scene.title)
+                            }
+                        }
+
                     }
                 }
             }

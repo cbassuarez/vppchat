@@ -23,7 +23,7 @@ struct SourcesControl: View {
             chipLabel
         }
         .buttonStyle(ScalePressButtonStyle())
-        .help("Attach per-message sources (web + explicit refs)")
+        .help("Web search (on/off) + explicit attachments for this send")
         .sheet(isPresented: $showSourcesModal) {
             SourcesModal(sources: $sources, sourcesTable: $sourcesTable)
         }
@@ -53,11 +53,14 @@ struct SourcesControl: View {
     }
 
     private func chipTitle(isSelected: Bool, count: Int) -> String {
-        var base = "Sources"
-        if sources == .web { base += " · Web" }
-        if count > 0 { base += " \(count)" }
-        return base
+      let retrieval = (sources == .web) ? "Web On" : "Web Off"
+      if count > 0 {
+        return "Sources · \(retrieval) · \(count) Attach"
+      } else {
+        return "Sources · \(retrieval)"
+      }
     }
+
 }
 
 // MARK: - Button style (keep local if not global)

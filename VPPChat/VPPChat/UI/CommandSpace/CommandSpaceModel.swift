@@ -23,6 +23,7 @@ struct CommandSpaceItem: Identifiable, Hashable {
         case track(projectID: Project.ID, trackID: Track.ID)
         case scene(projectID: Project.ID, trackID: Track.ID, sceneID: Scene.ID)
         case block(id: Block.ID)
+        case newEnvironment
 
         case newSession
         case newProject

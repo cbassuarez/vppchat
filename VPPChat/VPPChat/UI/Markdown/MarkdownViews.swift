@@ -24,39 +24,81 @@ struct MarkdownMessageBody: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visibleBlocks: Int = 0
 
-    private var document: MarkdownDocument {
-        MarkdownCache.shared.document(for: text)
-    }
-
     private var shouldAnimate: Bool {
         role == .assistant
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(document.blocks.enumerated()), id: \.1.id) { idx, block in
-                MarkdownBlockView(block: block, theme: theme)
-                    .opacity(reduceMotion || !shouldAnimate ? 1 : (idx < visibleBlocks ? 1 : 0))
-                    .animation(
-                        reduceMotion || !shouldAnimate
-                        ? .none
-                        : .easeOut(duration: 0.22).delay(Double(idx) * 0.06),
-                        value: visibleBlocks
-                    )
-            }
+          if let header = vppSplit.header {
+            Text(header)
+              .font(AppTheme.Typography.mono(11, .semibold))
+              .foregroundStyle(theme.textSubtle)
+          }
+
+          ForEach(Array(bodyDocument.blocks.enumerated()), id: \.1.id) { idx, block in
+            MarkdownBlockView(block: block, theme: theme)
+              .opacity(reduceMotion || !shouldAnimate ? 1 : (idx < visibleBlocks ? 1 : 0))
+              .animation(
+                reduceMotion || !shouldAnimate ? .none : .easeOut(duration: 0.22).delay(Double(idx) * 0.06),
+                value: visibleBlocks
+              )
+          }
+
+          if let footer = vppSplit.footer {
+            Text(footer)
+              .font(AppTheme.Typography.mono(11, .regular))
+              .foregroundStyle(theme.textSecondary)
+          }
         }
+
         .textSelection(.enabled)
         .onAppear {
             if reduceMotion || !shouldAnimate {
-                visibleBlocks = document.blocks.count
+                visibleBlocks = bodyDocument.blocks.count
             } else {
                 visibleBlocks = 0
                 DispatchQueue.main.async {
-                    visibleBlocks = document.blocks.count
+                    visibleBlocks = bodyDocument.blocks.count
                 }
             }
         }
     }
+    private var vppSplit: (header: String?, body: String, footer: String?) {
+      let rawLines = text.components(separatedBy: .newlines)
+
+      // detect first/last non-empty lines
+      let firstIdx = rawLines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+      let lastIdx  = rawLines.lastIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+
+      var header: String? = nil
+      var footer: String? = nil
+      var bodyLines = rawLines
+
+      if let i = firstIdx {
+        let s = rawLines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("<"), s.hasSuffix(">"), !s.contains(" ") {
+          header = s
+          bodyLines.remove(at: i)
+        }
+      }
+
+      if let j0 = lastIdx {
+        let j = min(j0, bodyLines.count - 1)
+        let s = bodyLines[j].trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("[Version=") || (s.hasPrefix("[") && s.contains("Version=") && s.contains("Tag=<")) {
+          footer = s
+          bodyLines.remove(at: j)
+        }
+      }
+
+      return (header, bodyLines.joined(separator: "\n"), footer)
+    }
+
+    private var bodyDocument: MarkdownDocument {
+      MarkdownCache.shared.document(for: vppSplit.body)
+    }
+
 }
 
 // MARK: - Block rendering
@@ -69,7 +111,7 @@ private struct MarkdownBlockView: View {
         switch block.kind {
         case .plainText(let s):
             Text(s)
-                .font(.system(size: 14, weight: .regular))
+                .font(AppTheme.Typography.body)
                 .foregroundStyle(theme.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -191,12 +233,8 @@ struct MarkdownAttributedStringBuilder {
                                isInlineCode: Bool = false) -> AttributedString {
         var a = AttributedString(s)
 
-        let font: Font = {
-            let design: Font.Design = traits.code ? .monospaced : .default
-            var f = Font.system(size: style.fontSize, weight: traits.strong ? .semibold : style.weight, design: design)
-            if traits.emphasis { f = f.italic() }
-            return f
-        }()
+        let baseWeight: Font.Weight = traits.strong ? .semibold : style.weight
+        let font: Font = AppTheme.Typography.mono(style.fontSize, baseWeight, italic: traits.emphasis)
 
         var container = AttributeContainer()
         container.font = font

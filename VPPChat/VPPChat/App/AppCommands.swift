@@ -50,6 +50,13 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("l", modifiers: .command)
         }
+        
+        CommandMenu("File") {
+            Button("New…") {
+                workspaceViewModel.presentNewEntityWizard()
+            }
+            .keyboardShortcut("n", modifiers: .command)
+        }
 
         CommandMenu("Studio") {
             Button("Next Scene") {

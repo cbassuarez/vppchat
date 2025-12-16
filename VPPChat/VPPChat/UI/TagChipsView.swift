@@ -36,7 +36,7 @@ struct TagChipsView: View {
                     }
                 }) {
                     Text(tagLabel(tag))
-                        .font(.system(size: 11, weight: .semibold, design: .default))
+                        .font(AppTheme.Typography.chip)
                         .textCase(.uppercase)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)

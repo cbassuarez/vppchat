@@ -165,6 +165,38 @@ final class ThemeManager: ObservableObject {
 // MARK: - AppTheme tokens (light aerogel)
 
 enum AppTheme {
+    enum Typography {
+      private static func psName(for weight: Font.Weight, italic: Bool) -> String {
+        switch (weight, italic) {
+        case (.bold, true): return "IBMPlexMono-BoldItalic"
+        case (.bold, false): return "IBMPlexMono-Bold"
+        case (.semibold, true): return "IBMPlexMono-SemiBoldItalic"
+        case (.semibold, false): return "IBMPlexMono-SemiBold"
+        case (.medium, true): return "IBMPlexMono-MediumItalic"
+        case (.medium, false): return "IBMPlexMono-Medium"
+        default:
+          return italic ? "IBMPlexMono-Italic" : "IBMPlexMono-Regular"
+        }
+      }
+
+      static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular, italic: Bool = false) -> Font {
+        .custom(psName(for: weight, italic: italic), size: size)
+      }
+
+      // Brand / wordmarks
+      static let wordmark = mono(18, .bold)
+      static let wordmarkSub = mono(12, .medium)
+
+      // VPP UI
+      static let chip = mono(11, .semibold)
+      static let metaLabel = mono(10, .semibold)
+      static let metaValue = mono(12, .medium)
+
+      // Body
+      static let body = mono(14, .regular)
+      static let bodySmall = mono(12, .regular)
+    }
+
     enum Colors {
         // Backgrounds — aerogel / light glass
         //

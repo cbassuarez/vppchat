@@ -182,6 +182,7 @@ struct VPPChatApp: App {
     private let shellModeKey = "vppchat.shell.lastMode"
     
     init() {
+        FontRegistry.registerAll()
         let saved = UserDefaults.standard.string(forKey: shellModeKey)
         let initial = ShellMode(rawValue: saved ?? "") ?? .atlas
         _shellMode = State(initialValue: initial)

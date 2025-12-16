@@ -80,6 +80,7 @@ private struct ConsoleSessionSidebar: View {
                         .font(.system(size: 12, weight: .bold))
                 }
                 .buttonStyle(.plain)
+                
             }
 
             List(selection: selectionBinding) {
@@ -98,6 +99,17 @@ private struct ConsoleSessionSidebar: View {
         }
         .padding(12)
         .panelBackground()
+        Button { workspace.presentNewEntityWizard() } label: {
+               Image(systemName: "plus")
+                   .font(.system(size: 12, weight: .bold))
+                   .padding(10)
+                   .background(AppTheme.Colors.surface1)
+                   .clipShape(Circle())
+                   .overlay(Circle().stroke(AppTheme.Colors.borderSoft, lineWidth: 1))
+           }
+           .buttonStyle(.plain)
+           .padding(12)
+
     }
 
     private var selectionBinding: Binding<ConsoleSession.ID?> {

@@ -10,12 +10,12 @@ struct MainToolbar: View {
         HStack(spacing: 16) {
             HStack(spacing: 8) {
                 Text("VPP")
-                    .font(.system(size: 18, weight: .heavy, design: .rounded))
+                    .font(AppTheme.Typography.wordmark)
                     .kerning(1.2)
                     .foregroundStyle(AppTheme.Colors.textPrimary)
 
                 Text(currentModeLabel)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(AppTheme.Typography.wordmarkSub)
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }
 
@@ -45,9 +45,9 @@ struct MainToolbar: View {
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(AppTheme.Typography.chip)
                 Text(label)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(AppTheme.Typography.chip)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

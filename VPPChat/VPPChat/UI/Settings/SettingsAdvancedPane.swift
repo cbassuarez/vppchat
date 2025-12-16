@@ -23,13 +23,17 @@ struct SettingsAdvancedPane: View {
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("Verbose logging", isOn: $verboseLogging)
                     .toggleStyle(.switch)
+                    .font(AppTheme.Typography.mono(13))
                 Toggle("Show debug overlays", isOn: $debugOverlays)
                     .toggleStyle(.switch)
+                    .font(AppTheme.Typography.mono(13))
+
                 Toggle("Enable experimental features", isOn: $experimentalFeatures)
                     .toggleStyle(.switch)
+                    .font(AppTheme.Typography.mono(13))
 
                 Text("These are developer-facing defaults. Some may require an app restart.")
-                    .font(.system(size: 11))
+                    .font(AppTheme.Typography.mono(11))
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }
         }
@@ -51,10 +55,10 @@ struct SettingsAdvancedPane: View {
                 .foregroundStyle(AppTheme.Colors.textSecondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Advanced")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(AppTheme.Typography.mono(15, .semibold))
                     .foregroundStyle(AppTheme.Colors.textPrimary)
                 Text("Diagnostics and experimental flags.")
-                    .font(.system(size: 11))
+                    .font(AppTheme.Typography.mono(11))
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }
             Spacer()

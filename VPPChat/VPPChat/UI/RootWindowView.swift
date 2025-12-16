@@ -9,6 +9,7 @@
 import SwiftUI
 
 struct RootWindowView: View {
+  @EnvironmentObject private var workspace: WorkspaceViewModel
   @Binding var shellMode: ShellMode
 
   @EnvironmentObject private var workspaceVM: WorkspaceViewModel
@@ -38,5 +39,9 @@ struct RootWindowView: View {
     }
     .animation(.easeInOut(duration: AppTheme.Motion.medium),
                value: workspaceVM.isCommandSpaceVisible)
+    .sheet(isPresented: $workspace.isNewEntityWizardPresented) {
+        NewEntityWizard()
+            .environmentObject(workspace)
+    }
   }
 }
