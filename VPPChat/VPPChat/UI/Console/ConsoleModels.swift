@@ -24,9 +24,19 @@ enum ConsoleMessageState: Equatable, Codable {
         return false
     }
 }
+enum InFlightStage: String, Codable, Equatable {
+     case sending
+     case receiving
+ }
 
 enum RequestStatus: Equatable, Codable {
     case idle
-    case inFlight
+    case inFlight(stage: InFlightStage, startedAt: Date)
     case error(message: String?)
 }
+extension RequestStatus {
+     var isInFlight: Bool {
+         if case .inFlight = self { return true }
+         return false
+     }
+ }

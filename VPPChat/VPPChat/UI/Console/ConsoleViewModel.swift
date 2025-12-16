@@ -71,7 +71,7 @@ final class ConsoleViewModel: ObservableObject {
         var updated = messages
         updated.append(placeholder)
         messages = updated
-        requestStatus = .inFlight
+        requestStatus = .inFlight(stage: .sending, startedAt: Date())
     }
 
     /// Complete the pending assistant message as a normal reply.

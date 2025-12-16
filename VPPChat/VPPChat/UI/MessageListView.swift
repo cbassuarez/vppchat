@@ -152,7 +152,7 @@ struct ConsoleMessageRow: View {
             ExistingBubbleView(message: message)
 
         case .pending:
-            PendingAssistantBubble()
+            PendingAssistantBubble(sessionID: sessionID)
 
         case .error(let errorMessage):
             ErrorAssistantBubble(
@@ -335,25 +335,111 @@ struct StreamingMessageBody: View {
 }
 
 struct PendingAssistantBubble: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(AppTheme.Colors.surface1.opacity(0.7))
-                .frame(width: 80, height: 10)
-                .redacted(reason: .placeholder)
+    let sessionID: ConsoleSession.ID?
+    @EnvironmentObject private var workspace: WorkspaceViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isExpanded: Bool = false
 
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(AppTheme.Colors.surface1.opacity(0.6))
-                .frame(width: 120, height: 10)
-                .redacted(reason: .placeholder)
+    private var session: ConsoleSession? {
+        guard let sessionID else { return nil }
+        return workspace.consoleSessions.first(where: { $0.id == sessionID })
+    }
+
+    private var statusText: String {
+        guard let s = session else { return "Receiving…" }
+        switch s.requestStatus {
+        case .inFlight(let stage, _):
+            return (stage == .sending) ? "Sending…" : "Receiving…"
+        default:
+            return "Receiving…"
         }
-        .padding(10)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.system(size: 12, weight: .semibold))
+                    .symbolEffect(.pulse, isActive: !reduceMotion)
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+
+                Text(statusText)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.Colors.textSecondary)
+
+                Spacer()
+
+                Button {
+                    withAnimation(.easeOut(duration: AppTheme.Motion.fast)) { isExpanded.toggle() }
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.Colors.textSubtle)
+                        .padding(6)
+                        .background(AppTheme.Colors.surface0)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(AppTheme.Colors.borderSoft, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isExpanded ? "Hide details" : "Show details")
+            }
+
+            if isExpanded, let s = session {
+                InFlightDetails(session: s)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(AppTheme.Colors.surface1)
+                .fill(AppTheme.Colors.surface1.opacity(0.92))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
         )
     }
 }
+
+private struct InFlightDetails: View {
+    let session: ConsoleSession
+
+    private func row(_ k: String, _ v: String) -> some View {
+        HStack {
+            Text(k).foregroundStyle(AppTheme.Colors.textSubtle)
+            Spacer()
+            Text(v).foregroundStyle(AppTheme.Colors.textSecondary)
+        }
+        .font(.system(size: 11, weight: .medium))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            row("Model", session.modelID)
+            row("Temperature", String(format: "%.2f", session.temperature))
+            row("Context", "\(session.contextStrategy)")
+            if case let .inFlight(_, startedAt) = session.requestStatus {
+                row("Elapsed", elapsedString(since: startedAt))
+            }
+        }
+        .padding(10)
+        .background(AppTheme.Colors.surface0)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+        )
+    }
+
+    private func elapsedString(since d: Date) -> String {
+        let t = Date().timeIntervalSince(d)
+        if t < 60 { return "\(Int(t))s" }
+        let m = Int(t / 60)
+        let s = Int(t) % 60
+        return "\(m)m \(s)s"
+    }
+}
+
 
 struct ErrorAssistantBubble: View {
     let errorText: String

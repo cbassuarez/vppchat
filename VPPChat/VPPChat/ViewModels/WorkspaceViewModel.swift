@@ -85,7 +85,8 @@ final class WorkspaceViewModel: ObservableObject {
                 if autoRepliedUserMessageIDs.contains(last.id) { continue }
     
                 if let s = consoleSessions.first(where: { $0.id == block.id }),
-                   case .inFlight = s.requestStatus {
+                    case .inFlight = s.requestStatus {
+
                     continue
                 }
     
@@ -1023,7 +1024,7 @@ extension WorkspaceViewModel {
                 // keep title + seed messages if missing
                 consoleSessions[idx].title = block.title
                 // ✅ if not actively sending, keep session transcript in lockstep with the block
-                            if case .inFlight = consoleSessions[idx].requestStatus {
+                if case .inFlight = consoleSessions[idx].requestStatus {
                                 // keep local pending placeholder while request is in flight
                             } else {
                                 consoleSessions[idx].messages = block.messages.map { m in
@@ -1184,8 +1185,19 @@ extension WorkspaceViewModel {
             }
         session.messages.append(pendingMessage)
         session.lastUsedAt = Date()
-        session.requestStatus = .inFlight
+        session.requestStatus = .inFlight(stage: .sending, startedAt: timestamp)
         consoleSessions[index] = session
+        // Premium + truthful: brief “Sending…” then “Receiving…” while we wait.
+         Task { @MainActor [weak self] in
+             guard let self else { return }
+             try? await Task.sleep(nanoseconds: 220_000_000)
+             guard let latestIndex = self.consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+             if case let .inFlight(stage, startedAt) = self.consoleSessions[latestIndex].requestStatus,
+                stage == .sending {
+                 self.consoleSessions[latestIndex].requestStatus = .inFlight(stage: .receiving, startedAt: startedAt)
+             }
+         }
+
         
         // ✅ persist user message into WorkspaceStore Block
         let st = vppRuntime.state

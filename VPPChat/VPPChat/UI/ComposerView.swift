@@ -29,8 +29,8 @@ struct ComposerView: View {
 
     private var sendPhase: SendPhase {
         switch requestStatus {
-        case .inFlight:
-            return .sending
+        case .inFlight(let stage, _):
+        return (stage == .sending) ? .sending : .receiving
         case .error:
             // Visually shows “Retry”, but actual retry is via the error card for now.
             return .error

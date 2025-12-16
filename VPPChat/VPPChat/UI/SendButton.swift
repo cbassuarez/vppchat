@@ -12,7 +12,7 @@ enum SendPhase: Equatable {
     case idleDisabled
     case idleReady
     case sending
-    case streaming
+    case receiving
     case error
 }
 
@@ -40,7 +40,7 @@ struct SendButton: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(!isEnabled || phase == .sending || phase == .streaming)
+        .disabled(!isEnabled || phase == .sending || phase == .receiving)
         .onHover { hovering in
             withAnimation(reduceMotion ? .none : .easeOut(duration: AppTheme.Motion.fast)) {
                 isHovering = hovering
@@ -52,7 +52,7 @@ struct SendButton: View {
             guard !reduceMotion else { return }
 
             // Ink in/out based on phase
-            if newPhase == .sending || newPhase == .streaming {
+            if newPhase == .sending || newPhase == .receiving {
                 withAnimation(.easeOut(duration: 0.45)) {
                     inkProgress = 1.0
                 }
@@ -100,7 +100,7 @@ struct SendButton: View {
                 return AppTheme.Colors.surface1
             case .idleReady:
                 return AppTheme.Colors.structuralAccent
-            case .sending, .streaming:
+            case .sending, .receiving:
                 return AppTheme.Colors.structuralAccent.opacity(0.95)
             case .error:
                 return AppTheme.Colors.exceptionAccent
@@ -116,6 +116,10 @@ struct SendButton: View {
                     .stroke(borderColor, lineWidth: 1.0)
             )
             .overlay(inkOverlay)
+            .overlay(FlightSweepOverlay(isActive: (phase == .sending || phase == .receiving) && !reduceMotion)
+                 .clipShape(Capsule())
+             )
+
             .shadow(
                 color: shadowColor,
                 radius: phase == .idleReady && isHovering ? 10 : 8,
@@ -155,10 +159,7 @@ struct SendButton: View {
 
     private var contentLayer: some View {
         HStack(spacing: 8) {
-            ZStack {
-                iconLayer
-                progressRingLayer
-            }
+            iconLayer
             .frame(width: 16, height: 16)
 
             Text(labelText)
@@ -172,16 +173,16 @@ struct SendButton: View {
     }
 
     private var iconLayer: some View {
-        let symbolName: String = {
-            switch phase {
-            case .idleDisabled, .idleReady, .error:
-                return "paperplane.fill"
-            case .sending, .streaming:
-                return "ellipsis.bubble.fill"
-            }
-        }()
+        let isInFlight = (phase == .sending || phase == .receiving)
+         return ZStack {
+             Image(systemName: "paperplane.fill")
+                 .opacity(isInFlight ? 0.0 : 1.0)
+                 .scaleEffect(isInFlight ? 0.86 : 1.0)
+             Image(systemName: "ellipsis.bubble.fill")
+                 .opacity(isInFlight ? 1.0 : 0.0)
+                 .scaleEffect(isInFlight ? 1.0 : 0.86)
+         }
 
-        return Image(systemName: symbolName)
             .font(.system(size: 13, weight: .semibold))
             .symbolRenderingMode(.hierarchical)
             .opacity(phase == .idleDisabled ? 0.55 : 1.0)
@@ -189,7 +190,7 @@ struct SendButton: View {
             .modifier(BounceEffectModifier(trigger: pressToken, enabled: !reduceMotion))
             // Indefinite "thinking" effect while streaming
             .modifier(ThinkingEffectModifier(
-                isActive: (phase == .sending || phase == .streaming) && !reduceMotion
+                isActive: (phase == .sending || phase == .receiving) && !reduceMotion
             ))
             // Error pulse
             .modifier(ErrorEffectModifier(trigger: errorToken, enabled: !reduceMotion))
@@ -198,7 +199,7 @@ struct SendButton: View {
     /// Simple circular stroke shown only while sending/streaming.
     private var progressRingLayer: some View {
         Group {
-            if phase == .sending || phase == .streaming {
+            if phase == .sending || phase == .receiving {
                 Circle()
                     .strokeBorder(
                         AppTheme.Colors.window.opacity(0.8),
@@ -229,7 +230,7 @@ struct SendButton: View {
             return AppTheme.Colors.borderSoft
         case .idleReady:
             return AppTheme.Colors.borderEmphasis.opacity(isHovering ? 1.0 : 0.7)
-        case .sending, .streaming:
+        case .sending, .receiving:
             return AppTheme.Colors.borderEmphasis
         case .error:
             return AppTheme.Colors.exceptionAccent.opacity(0.9)
@@ -240,7 +241,7 @@ struct SendButton: View {
         switch phase {
         case .error:
             return AppTheme.Colors.exceptionAccent.opacity(0.45)
-        case .sending, .streaming:
+        case .sending, .receiving:
             return AppTheme.Colors.structuralAccent.opacity(0.35)
         case .idleReady:
             return AppTheme.Colors.structuralAccent.opacity(0.28)
@@ -253,7 +254,7 @@ struct SendButton: View {
         switch phase {
         case .idleDisabled:
             return AppTheme.Colors.textSecondary.opacity(0.9)
-        case .idleReady, .sending, .streaming:
+        case .idleReady, .sending, .receiving:
             return Color.white
         case .error:
             return Color.white
@@ -266,7 +267,7 @@ struct SendButton: View {
             return "Send"
         case .sending:
             return "Sending…"
-        case .streaming:
+        case .receiving:
             return "Streaming…"
         case .error:
             return "Retry"
@@ -294,8 +295,8 @@ struct SendButton: View {
             return "Send message"
         case .sending:
             return "Sending message"
-        case .streaming:
-            return "Assistant is responding"
+        case .receiving:
+            return "Receiving response"
         case .error:
             return "Retry sending message"
         }
@@ -368,5 +369,45 @@ private struct ArcProgressShape: Shape {
     var animatableData: CGFloat {
         get { progress }
         set { progress = newValue }
+    }
+}
+private struct FlightSweepOverlay: View {
+    let isActive: Bool
+    @State private var x: CGFloat = -0.6
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(0.0),
+                            .white.opacity(0.22),
+                            .white.opacity(0.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: max(40, w * 0.28), height: geo.size.height)
+                .offset(x: x * w)
+                .blendMode(.screen)
+                .opacity(isActive ? 1 : 0)
+                .onAppear { startIfNeeded() }
+                .onChange(of: isActive) { _ in startIfNeeded() }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func startIfNeeded() {
+        guard isActive else {
+            x = -0.6
+            return
+        }
+        x = -0.6
+        withAnimation(.linear(duration: 1.05).repeatForever(autoreverses: false)) {
+            x = 1.6
+        }
     }
 }
