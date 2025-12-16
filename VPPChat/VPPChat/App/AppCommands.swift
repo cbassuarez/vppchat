@@ -40,7 +40,7 @@ struct AppCommands: Commands {
                     workspaceViewModel.isCommandSpaceVisible.toggle()
                 }
             }
-            .keyboardShortcut("k", modifiers: .command)
+            .keyboardShortcut("k", modifiers: [.command, .shift])
         }
 
         CommandMenu("Console") {

@@ -4,6 +4,8 @@ import SwiftUI
 import AppKit
 
 final class WorkspaceViewModel: ObservableObject {
+    private var autoNameTasks: [String: Task<Void, Never>] = [:]
+    private var autoNamedKeys: Set<String> = []
     let instanceID = UUID()
     var llmClient: LLMClient
     @Published var store: WorkspaceStore
@@ -15,6 +17,7 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var consoleModelID: String =
         LLMModelCatalog.presets.first?.id ?? ""
     @Published var consoleTemperature: Double = 0.4
+    private let namingTemperature: Double = 0.1
     @Published var consoleContextStrategy: LLMContextStrategy =
         LLMContextStrategy.allCases.first!
     
@@ -1004,6 +1007,375 @@ extension WorkspaceViewModel {
     }
 }
 
+// MARK: - Semantic auto-naming
+extension WorkspaceViewModel {
+
+    private enum AutoNameKind: String {
+        case conversation, scene, track, project
+    }
+
+    private struct NamePayload: Decodable {
+        let name: String
+        let summary: String?
+    }
+
+    private func autoNameKey(_ kind: AutoNameKind, _ id: UUID) -> String {
+        "\(kind.rawValue):\(id.uuidString)"
+    }
+
+    private func isPlaceholder(_ s: String, prefix: String) -> Bool {
+        // matches: "Project 1", "Track 12", "Scene 3", "Session 9"
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed == prefix || trimmed.hasPrefix(prefix + " ") else { return false }
+        let parts = trimmed.split(separator: " ")
+        guard parts.count == 2 else { return trimmed == prefix }
+        return Int(parts[1]) != nil
+    }
+
+    private func stripVppHeader(_ text: String) -> String {
+        // user message often starts with a VPP header line; remove obvious header-ish first line
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard let first = lines.first else { return text }
+        let f = first.trimmingCharacters(in: .whitespacesAndNewlines)
+        if f.hasPrefix("!<") || f.hasPrefix("<") {
+            return lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func shouldAutoNameConversation(_ block: Block) -> Bool {
+        guard block.kind == .conversation else { return false }
+        guard !block.isCanonical else { return false }
+        return isPlaceholder(block.title, prefix: "Session") || block.title == "Session"
+    }
+
+    private func shouldAutoNameScene(_ scene: Scene) -> Bool {
+        guard isPlaceholder(scene.title, prefix: "Scene") || scene.title == "Scene" else { return false }
+        // avoid system containers if they ever come through as scenes
+        if scene.title == "Console Chats" || scene.title == "Welcome" { return false }
+        return true
+    }
+
+    private func shouldAutoNameTrack(_ track: Track) -> Bool {
+        guard isPlaceholder(track.name, prefix: "Track") || track.name == "Track" else { return false }
+        if track.name == "Sessions" || track.name == "Start Here" { return false }
+        return true
+    }
+
+    private func shouldAutoNameProject(_ project: Project) -> Bool {
+        guard isPlaceholder(project.name, prefix: "Project") || project.name == "Project" else { return false }
+        if project.name == "Console" || project.name == "Getting Started" { return false }
+        return true
+    }
+
+    @MainActor
+    private func scheduleAutoName(_ kind: AutoNameKind, id: UUID, delayMs: UInt64 = 250, op: @escaping @MainActor () async -> Void) {
+        let key = autoNameKey(kind, id)
+        autoNameTasks[key]?.cancel()
+        autoNameTasks[key] = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
+            await op()
+        }
+    }
+
+    private func buildConversationNamingContext(conversationID: UUID) -> String? {
+        guard let block = store.block(id: conversationID) else { return nil }
+        // use first user message as the semantic seed
+        guard let firstUser = block.messages.first(where: { $0.isUser }) else { return nil }
+        let seed = stripVppHeader(firstUser.body)
+        return seed.isEmpty ? nil : seed
+    }
+    
+    private func stripVppEnvelope(_ text: String) -> String {
+        let lines = text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+
+        // Drop leading tag line like "!<g> ..." or "<g>"
+        var start = 0
+        if let first = lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            if first.hasPrefix("!<") || (first.hasPrefix("<") && first.contains(">")) {
+                start = 1
+            }
+        }
+
+        // Drop trailing footer like "[Version=v1.4 | Tag=... ]"
+        var end = lines.count
+        if let last = lines.last?.trimmingCharacters(in: .whitespacesAndNewlines),
+           last.hasPrefix("[") && last.contains("Version=v1.4") && last.contains("Tag=<") && last.contains("Cycle=") {
+            end = max(start, end - 1)
+        }
+
+        return lines[start..<end].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func clamp(_ s: String, _ maxChars: Int) -> String {
+        guard s.count > maxChars else { return s }
+        let idx = s.index(s.startIndex, offsetBy: maxChars)
+        return String(s[..<idx]) + "…"
+    }
+
+    private func buildSceneNamingContext(sceneID: UUID) -> String? {
+        guard let scene = store.scene(id: sceneID) else { return nil }
+        let blocks = store.blocks(in: scene)
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(3)
+
+        var parts: [String] = []
+        for b in blocks {
+            if b.kind == .conversation, let firstUser = b.messages.first(where: { $0.isUser }) {
+                parts.append("Chat: " + stripVppHeader(firstUser.body))
+            } else if b.kind == .document, let t = b.documentText, !t.isEmpty {
+                parts.append("Doc: " + t)
+            } else {
+                parts.append("Block: " + b.title)
+            }
+        }
+        let ctx = parts.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return ctx.isEmpty ? nil : ctx
+    }
+
+    private func buildTrackNamingContext(trackID: UUID) -> String? {
+            guard
+                let track = store.track(id: trackID),
+                let project = store.project(id: track.projectID)
+            else { return nil }
+    
+            // Sibling tracks (same project, excluding this one), max 5
+            let siblingTrackNames: [String] = project.tracks
+                .filter { $0 != track.id }
+                .compactMap { store.track(id: $0)?.name }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .prefix(5)
+                .map { "• \($0)" }
+    
+            // Scenes in this track, max 8
+            let scenes: [Scene] = track.scenes.compactMap { store.scene(id: $0) }
+            let sceneLines = scenes
+                .prefix(8)
+                .map { "• \($0.title)" }
+    
+            // Conversations across scenes: include title + short excerpt, capped
+            var convoLines: [String] = []
+            for scene in scenes {
+                let convos = store.blocks(in: scene)
+                    .filter { $0.kind == .conversation }
+                    .sorted { $0.updatedAt > $1.updatedAt }
+                    .prefix(2)
+    
+                for b in convos {
+                    let userBodies = b.messages
+                        .filter { $0.isUser }
+                        .map { clamp(stripVppEnvelope($0.body), 260) }
+                        .filter { !$0.isEmpty }
+    
+                    let firstFew = Array(userBodies.prefix(3))
+                    let lastOne: [String] = {
+                        guard let last = userBodies.last else { return [] }
+                        return firstFew.contains(last) ? [] : [last]
+                    }()
+                    let selected = firstFew + lastOne
+                    let excerpt = selected.joined(separator: "  ⟂  ")
+    
+                    let title = b.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if excerpt.isEmpty {
+                        convoLines.append("• \(title)")
+                    } else {
+                        convoLines.append("• \(title): \(excerpt)")
+                    }
+                }
+            }
+            convoLines = Array(convoLines.prefix(8))
+    
+            var out = ""
+            out += "HIERARCHY\n"
+            out += "Project: \(project.name)\n"
+            out += "Track (current): \(track.name)\n\n"
+    
+            out += "SIBLING TRACKS (same project, max 5)\n"
+            out += siblingTrackNames.isEmpty ? "• (none)\n\n" : siblingTrackNames.joined(separator: "\n") + "\n\n"
+    
+            out += "SCENES (this track, max 8)\n"
+            out += sceneLines.isEmpty ? "• (none)\n\n" : sceneLines.joined(separator: "\n") + "\n\n"
+    
+            out += "CONVERSATIONS (titles + excerpts, max 8)\n"
+            out += convoLines.isEmpty ? "• (none)\n" : convoLines.joined(separator: "\n")
+    
+            let ctx = out.trimmingCharacters(in: .whitespacesAndNewlines)
+            return ctx.isEmpty ? nil : ctx
+        }
+
+    private func buildProjectNamingContext(projectID: UUID) -> String? {
+        guard let project = store.project(id: projectID) else { return nil }
+        let trackNames = project.tracks.compactMap { store.track(id: $0)?.name }.prefix(6)
+        let ctx = trackNames.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return ctx.isEmpty ? nil : ctx
+    }
+
+    private func requestNameFromLLM(kind: AutoNameKind, context: String, modelID: String) async throws -> NamePayload {
+        let system = """
+        You generate short semantic names for an app’s workspace entities.
+
+        Return STRICT JSON only:
+        {"name":"...","summary":"...optional..."}
+
+        Rules:
+        - name: 2–6 words, Title Case, no quotes, no emojis, no trailing punctuation.
+        - summary: optional; only include for scenes (1 sentence, <= 14 words).
+        """
+
+        let user = """
+        Entity kind: \(kind.rawValue)
+        Context:
+        \(context.prefix(1200))
+        """
+
+        let req = LLMRequest(
+            modelID: modelID,
+            temperature: namingTemperature,
+            contextStrategy: consoleContextStrategy,
+            messages: [
+                LLMMessage(role: .system, content: system),
+                LLMMessage(role: .user, content: user)
+            ]
+        )
+
+        let resp = try await llmClient.send(req)
+        let raw = resp.text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Parse first JSON object in the response (defensive)
+        if let start = raw.firstIndex(of: "{"), let end = raw.lastIndex(of: "}") , start < end {
+            let json = String(raw[start...end])
+            let data = Data(json.utf8)
+            if let decoded = try? JSONDecoder().decode(NamePayload.self, from: data) {
+                return decoded
+            }
+        }
+
+        // Fallback: treat the first non-empty line as the name
+        let firstLine = raw.split(separator: "\n").map(String.init).first ?? "Untitled"
+        return NamePayload(name: firstLine, summary: nil)
+    }
+
+    @MainActor
+    private func applyConversationName(_ name: String, conversationID: UUID) {
+        guard var block = store.block(id: conversationID) else { return }
+        block.title = name
+        block.updatedAt = .now
+        store.update(block: block)
+        syncConsoleSessionsFromBlocks()
+    }
+
+    @MainActor
+    private func applySceneName(_ payload: NamePayload, sceneID: UUID) {
+        guard var scene = store.scene(id: sceneID) else { return }
+        scene.title = payload.name
+        if let s = payload.summary, !s.isEmpty { scene.summary = s }
+        scene.updatedAt = .now
+        store.update(scene: scene)
+        do { try repo?.renameScene(id: sceneID, title: payload.name) }
+        catch { print("❌ renameScene failed:", error) }
+        reloadLibraryTree()
+    }
+
+    @MainActor
+    private func applyTrackName(_ name: String, trackID: UUID) {
+        guard var track = store.track(id: trackID) else { return }
+        track.name = name
+        store.update(track: track)
+        do { try repo?.renameTrack(id: trackID, name: name) }
+        catch { print("❌ renameTrack failed:", error) }
+        reloadLibraryTree()
+    }
+
+    @MainActor
+    private func applyProjectName(_ name: String, projectID: UUID) {
+        guard var project = store.project(id: projectID) else { return }
+        project.name = name
+        store.update(project: project)
+        do { try repo?.renameProject(id: projectID, name: name) }
+        catch { print("❌ renameProject failed:", error) }
+        reloadLibraryTree()
+    }
+
+    /// Call this after the first user message is appended.
+    @MainActor
+    func maybeAutoNameCascade(fromConversation conversationID: UUID, modelID: String) {
+        guard let convoBlock = store.block(id: conversationID) else { return }
+
+        // Conversation
+        if shouldAutoNameConversation(convoBlock) && !autoNamedKeys.contains(autoNameKey(.conversation, conversationID)) {
+            scheduleAutoName(.conversation, id: conversationID) { [weak self] in
+                guard let self else { return }
+                guard let ctx = self.buildConversationNamingContext(conversationID: conversationID) else { return }
+                do {
+                    let payload = try await self.requestNameFromLLM(kind: .conversation, context: ctx, modelID: modelID)
+                    await MainActor.run {
+                        self.applyConversationName(payload.name, conversationID: conversationID)
+                        self.autoNamedKeys.insert(self.autoNameKey(.conversation, conversationID))
+                    }
+                } catch {
+                    print("❌ auto-name conversation failed:", error)
+                }
+            }
+        }
+
+        // Scene / Track / Project cascade (only if still placeholders)
+        guard let scene = store.scene(id: convoBlock.sceneID) else { return }
+        guard let track = store.track(id: scene.trackID) else { return }
+        guard let project = store.project(id: track.projectID) else { return }
+
+        if shouldAutoNameScene(scene) && !autoNamedKeys.contains(autoNameKey(.scene, scene.id)) {
+            scheduleAutoName(.scene, id: scene.id) { [weak self] in
+                guard let self else { return }
+                guard let ctx = self.buildSceneNamingContext(sceneID: scene.id) else { return }
+                do {
+                    let payload = try await self.requestNameFromLLM(kind: .scene, context: ctx, modelID: modelID)
+                    await MainActor.run {
+                        self.applySceneName(payload, sceneID: scene.id)
+                        self.autoNamedKeys.insert(self.autoNameKey(.scene, scene.id))
+                    }
+                } catch {
+                    print("❌ auto-name scene failed:", error)
+                }
+            }
+        }
+
+        if shouldAutoNameTrack(track) && !autoNamedKeys.contains(autoNameKey(.track, track.id)) {
+            scheduleAutoName(.track, id: track.id) { [weak self] in
+                guard let self else { return }
+                guard let ctx = self.buildTrackNamingContext(trackID: track.id) else { return }
+                do {
+                    let payload = try await self.requestNameFromLLM(kind: .track, context: ctx, modelID: modelID)
+                    await MainActor.run {
+                        self.applyTrackName(payload.name, trackID: track.id)
+                        self.autoNamedKeys.insert(self.autoNameKey(.track, track.id))
+                    }
+                } catch {
+                    print("❌ auto-name track failed:", error)
+                }
+            }
+        }
+
+        if shouldAutoNameProject(project) && !autoNamedKeys.contains(autoNameKey(.project, project.id)) {
+            scheduleAutoName(.project, id: project.id) { [weak self] in
+                guard let self else { return }
+                guard let ctx = self.buildProjectNamingContext(projectID: project.id) else { return }
+                do {
+                    let payload = try await self.requestNameFromLLM(kind: .project, context: ctx, modelID: modelID)
+                    await MainActor.run {
+                        self.applyProjectName(payload.name, projectID: project.id)
+                        self.autoNamedKeys.insert(self.autoNameKey(.project, project.id))
+                    }
+                } catch {
+                    print("❌ auto-name project failed:", error)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - LLM send pipeline
 
 extension WorkspaceViewModel {
@@ -1217,6 +1589,11 @@ extension WorkspaceViewModel {
             validationIssues: []
         )
         store.appendMessage(to: conversationID, blockUser)
+        
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.maybeAutoNameCascade(fromConversation: conversationID, modelID: config.modelID)
+        }
 
 
         // ✅ build request messages

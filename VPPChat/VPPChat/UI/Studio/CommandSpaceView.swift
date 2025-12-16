@@ -69,7 +69,7 @@ struct CommandSpaceView: View {
             Spacer()
 
             if isHovering {
-                Text("⌘K")
+                Text("⇧⌘K")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(StudioTheme.Colors.textSecondary)
                     .transition(.opacity.combined(with: .move(edge: .top)))

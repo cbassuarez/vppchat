@@ -189,27 +189,30 @@ struct VPPChatApp: App {
     
     var body: some SwiftUI.Scene {
         WindowGroup {
-            ZStack(alignment: .top) {
-                // Shader background
-                NoiseBackground()
-
-                // Main shell (Console / Atlas / Studio)
-                MainShellView(mode: $shellMode)
-                    .environment(\.shellModeBinding, $shellMode)
-
-                // 🔴 Single global dim + Command Space overlay
-                if workspaceVM.isCommandSpaceVisible {
-                    Color.black
-                        .opacity(AppTheme.Motion.commandSpaceDimOpacity)
-                        .ignoresSafeArea()
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
-
-                    CommandSpaceView()
-                        .padding(.top, 18)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+            RootWindowView(shellMode: $shellMode)
+              .background(Color.clear)
+              .background(
+                WindowConfigurator { window in
+                  window.titlebarAppearsTransparent = true
+                  window.titleVisibility = .hidden
+                  window.styleMask.insert(.fullSizeContentView)
+                  window.isMovableByWindowBackground = false
+                  window.backgroundColor = .clear
                 }
-            }
+              )
+              .environmentObject(appViewModel)
+              .environmentObject(appViewModel.workspace)
+              .environmentObject(themeManager)
+              .environmentObject(llmConfig)
+              .onAppear {
+                workspaceVM.switchToShell = { mode in shellMode = mode }
+                workspaceVM.currentShellMode = shellMode
+                workspaceVM.ensureDefaultConsoleSession()
+              }
+              .onChange(of: shellMode) { newValue in
+                workspaceVM.currentShellMode = newValue
+              }
+
             // 🔊 Tell the shader when Command Space opens/closes
             .onChange(of: workspaceVM.isCommandSpaceVisible) { visible in
                 themeManager.signal(visible ? .commandSpaceOpen : .commandSpaceClose)
