@@ -119,7 +119,7 @@ final class VppRuntime: ObservableObject {
 
         if let first = lines.first {
             let firstString = String(first)
-            if !(firstString.hasPrefix("<") || firstString.hasPrefix("!<")) {
+            if !firstString.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") {
                 issues.append("Missing leading tag line")
             }
         } else {

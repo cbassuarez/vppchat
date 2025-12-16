@@ -399,7 +399,7 @@ struct ErrorAssistantBubble: View {
             messages: SessionView.makeConsoleMessages(from: session)
         )
         MessageListView(sessionID: seeded.id, messages: seeded.messages, onRetry: nil)
-            .background(NoiseBackground())
-            .environmentObject(WorkspaceViewModel())
+                   .background(NoiseBackground())
+                   .environmentObject(appVM.workspace)
     }
 }

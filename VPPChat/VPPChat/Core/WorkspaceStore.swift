@@ -1,7 +1,142 @@
 import Foundation
 import Combine
+import GRDB
 
 final class WorkspaceStore: ObservableObject {
+private var repo: WorkspaceRepository?
+
+    func setRepository(_ repo: WorkspaceRepository?) {
+        self.repo = repo
+    }
+
+    func loadFromRepository() throws {
+        guard let repo else { return }
+        let snap = try repo.snapshot(includeDeleted: false)
+
+        // ⚠️ Minimal implementation: rebuild in-memory dictionaries from DB.
+        // This assumes you already store blocks/scenes/tracks/projects in dictionaries as seen in your code.
+        // 1) Clear
+        blocks.removeAll()
+        scenes.removeAll()
+        tracks.removeAll()
+        projects.removeAll()
+
+        // 2) Rehydrate base graph (projects/tracks/scenes)
+        // These initializers must exist in your models:
+        // Project(id:name:tracks:lastOpenedTrackID:)
+        // Track(id:projectID:name:scenes:lastOpenedSceneID:)
+        // Scene(id:trackID:title:)
+
+        // Projects
+        for r in snap.projects {
+            let id = UUID(uuidString: r["id"])!
+            let name: String = r["name"]
+            projects[id] = Project(id: id, name: name)
+        }
+        // Tracks
+        for r in snap.tracks {
+            let id = UUID(uuidString: r["id"])!
+            let projectID = UUID(uuidString: r["projectID"])!
+            let name: String = r["name"]
+            tracks[id] = Track(id: id, projectID: projectID, name: name)
+                        if var p = projects[projectID] {
+                            p.tracks.append(id)
+                            projects[projectID] = p
+                        }
+        }
+        // Scenes
+        for r in snap.scenes {
+            let id = UUID(uuidString: r["id"])!
+            let trackID = UUID(uuidString: r["trackID"])!
+            let title: String = r["title"]
+            scenes[id] = Scene(id: id, trackID: trackID, title: title)
+                        if var t = tracks[trackID] {
+                            t.scenes.append(id)
+                            tracks[trackID] = t
+                        }
+        }
+
+        // Blocks
+        for r in snap.blocks {
+            let id = UUID(uuidString: r["id"])!
+            let sceneID = UUID(uuidString: r["sceneID"])!
+            let kindRaw: String = r["kind"]
+            let title: String = r["title"]
+            let subtitle: String? = r["subtitle"]
+            let isCanonicalInt: Int = r["isCanonical"]
+            let isCanonical = isCanonicalInt == 1
+            let documentText: String? = r["documentText"]
+
+            let createdAtSeconds: Double = r["createdAt"]
+                        let updatedAtSeconds: Double = r["updatedAt"]
+                        let createdAt = Date(timeIntervalSince1970: createdAtSeconds)
+                        let updatedAt = Date(timeIntervalSince1970: updatedAtSeconds)
+            
+                        // ✅ Block.Kind doesn’t exist in your model — your kind enum is top-level.
+                        let kind = BlockKind(rawValue: kindRaw) ?? .document
+
+            blocks[id] = Block(
+                id: id,
+                sceneID: sceneID,
+                kind: kind,
+                title: title,
+                subtitle: subtitle,
+                messages: [],
+                documentText: documentText,
+                isCanonical: isCanonical,
+                createdAt: createdAt,
+                updatedAt: updatedAt
+            )
+        }
+
+        // Messages → attach to blocks
+        for r in snap.messages {
+            let id = UUID(uuidString: r["id"])!
+            let blockID = UUID(uuidString: r["blockID"])!
+            let isUserInt: Int = r["isUser"]
+                        let isUser = isUserInt == 1
+                        let timestampSeconds: Double = r["timestamp"]
+                        let timestamp = Date(timeIntervalSince1970: timestampSeconds)
+            let body: String = r["body"]
+            let tagRaw: String = r["tag"]
+            let cycleIndex: Int = r["cycleIndex"]
+            let assumptions: Int = r["assumptions"]
+            let sources: String = r["sources"]
+            let sourcesTableJSON: String = r["sourcesTableJSON"]
+            let locus: String = r["locus"]
+            let isValidVppInt: Int = r["isValidVpp"]
+            let isValidVpp = isValidVppInt == 1
+            let validationIssuesJSON: String = r["validationIssuesJSON"]
+            
+            // ✅ DB stores tag as TEXT; Message expects VppTag
+            let tag = VppTag(rawValue: tagRaw) ?? .g
+
+            // Your Message initializer differs; map here to your existing type.
+            let msg = Message(
+                id: id,
+                isUser: isUser,
+                timestamp: timestamp,
+                body: body,
+                tag: tag,
+                cycleIndex: cycleIndex,
+                assumptions: assumptions,
+                sources: VppSources(rawValue: sources) ?? .none,
+                sourcesTable: (try? JSONDecoder().decode([VppSourceRef].self, from: Data(sourcesTableJSON.utf8))) ?? [],
+                locus: locus,
+                isValidVpp: isValidVpp,
+                validationIssues: (try? JSONDecoder().decode([String].self, from: Data(validationIssuesJSON.utf8))) ?? []
+            )
+
+            // ✅ Block is a struct; mutate via local var + reassign
+                        if var b = blocks[blockID] {
+                            b.messages.append(msg)
+                            blocks[blockID] = b
+                        }
+        }
+
+        // Notify
+        objectWillChange.send()
+    }
     // MARK: - Canonical onboarding
         static let canonicalWelcomeBlockID = UUID(uuidString: "A3B1C7F2-1D6A-4D1A-9C4D-5D2C1E7A9F11")!
         private var gettingStartedProjectName: String { "Getting Started" }

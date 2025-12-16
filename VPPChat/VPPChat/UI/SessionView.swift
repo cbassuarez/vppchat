@@ -1,9 +1,6 @@
 import SwiftUI
 
 // SessionView displays a transcript and composer for the selected session.
-import SwiftUI
-
-// SessionView displays a transcript and composer for the selected session.
 struct SessionView: View {
     @ObservedObject private var appViewModel: AppViewModel
     @EnvironmentObject private var workspace: WorkspaceViewModel

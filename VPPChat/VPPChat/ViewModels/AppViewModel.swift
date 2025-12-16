@@ -15,14 +15,15 @@ final class AppViewModel: ObservableObject {
 
     private var isSyncingSessions = false
 
-    let llmClient: LlmClient
+    var llmClient: LLMClient
     private var cancellables = Set<AnyCancellable>()
 
     init(store: InMemoryStore = InMemoryStore(), runtime: VppRuntime = VppRuntime()) {
         self.store = store
         self.runtime = runtime
-        self.llmClient = FakeLlmClient(runtime: runtime) // can delete later; kept for now
-        self.workspace = WorkspaceViewModel(runtime: runtime)
+        self.llmClient = AdaptiveLLMClient(config: LLMConfigStore.shared)
+        self.workspace = WorkspaceViewModel(runtime: runtime, llmClient: self.llmClient)
+
         if let firstFolder = store.folders.first {
             self.selectedFolderID = firstFolder.id
         }

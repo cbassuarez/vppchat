@@ -176,6 +176,7 @@ struct VPPChatApp: App {
     @StateObject private var appViewModel = AppViewModel()
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var llmConfig = LLMConfigStore.shared
+    private var workspaceVM: WorkspaceViewModel { appViewModel.workspace }
     
     @State private var shellMode: ShellMode
     private let shellModeKey = "vppchat.shell.lastMode"
@@ -197,7 +198,7 @@ struct VPPChatApp: App {
                     .environment(\.shellModeBinding, $shellMode)
 
                 // 🔴 Single global dim + Command Space overlay
-                if appViewModel.workspace.isCommandSpaceVisible {
+                if workspaceVM.isCommandSpaceVisible {
                     Color.black
                         .opacity(AppTheme.Motion.commandSpaceDimOpacity)
                         .ignoresSafeArea()
@@ -210,18 +211,20 @@ struct VPPChatApp: App {
                 }
             }
             // 🔊 Tell the shader when Command Space opens/closes
-            .onChange(of: appViewModel.workspace.isCommandSpaceVisible) { visible in
+            .onChange(of: workspaceVM.isCommandSpaceVisible) { visible in
                 themeManager.signal(visible ? .commandSpaceOpen : .commandSpaceClose)
             }
             .onAppear {
-                appViewModel.workspace.switchToShell = { mode in
+                print("APP  appViewModel.workspace.instanceID =", appViewModel.workspace.instanceID)
+
+                workspaceVM.switchToShell = { mode in
                     shellMode = mode
                 }
-                appViewModel.workspace.currentShellMode = shellMode
-                appViewModel.ensureDefaultSession()
+                workspaceVM.currentShellMode = shellMode
+                workspaceVM.ensureDefaultConsoleSession()
             }
             .onChange(of: shellMode) { newValue in
-                appViewModel.workspace.currentShellMode = newValue
+                workspaceVM.currentShellMode = newValue
             }
             .background(Color.clear)
             .background(
@@ -234,13 +237,10 @@ struct VPPChatApp: App {
                 }
             )
             .environmentObject(appViewModel)
-            .environmentObject(appViewModel.workspace)
+            .environmentObject(workspaceVM)
             .environmentObject(themeManager)
             .environmentObject(llmConfig)
-            .animation(
-                .easeInOut(duration: AppTheme.Motion.medium),
-                value: appViewModel.workspace.isCommandSpaceVisible
-            )
+            .animation(.easeInOut(duration: AppTheme.Motion.medium), value: workspaceVM.isCommandSpaceVisible)
         }
 
         .windowStyle(.hiddenTitleBar)
@@ -260,7 +260,7 @@ struct VPPChatApp: App {
             SettingsRoot()
                 .windowResizeAnchorCompat(.trailing)
                 .environmentObject(appViewModel)
-                .environmentObject(appViewModel.workspace)
+                .environmentObject(workspaceVM)
                 .environmentObject(themeManager)
                 .environmentObject(llmConfig)
         }

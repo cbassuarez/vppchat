@@ -1,9 +1,11 @@
 import Foundation
 import Combine
 import SwiftUI
+import AppKit
 
 final class WorkspaceViewModel: ObservableObject {
     let instanceID = UUID()
+    var llmClient: LLMClient
     @Published var store: WorkspaceStore
     @Published var selectedProjectID: Project.ID?
     @Published var selectedTrackID: Track.ID?
@@ -44,6 +46,14 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var isCommandSpaceVisible: Bool = false
     @Published var focusConsoleComposerToken: Int = 0
     @Published var vppRuntime: VppRuntime
+    @Published var activeWorkspaceID: UUID = UUID()
+    @Published private(set) var activeWorkspaceName: String = "Workspace"
+    @Published var libraryTree: [WorkspaceRepository.EnvironmentNode] = []
+    @Published var trashRoots: [WorkspaceRepository.TrashRoot] = []
+    
+    private var registry: WorkspaceRegistry?
+    private var db: WorkspaceDB?
+    private var repo: WorkspaceRepository?
 
     private var cancellables: Set<AnyCancellable> = []
     private var autoReplyTask: Task<Void, Never>?
@@ -89,9 +99,14 @@ final class WorkspaceViewModel: ObservableObject {
             }
         }
 
-    init(store: WorkspaceStore = WorkspaceStore(), runtime: VppRuntime = VppRuntime(state: .default)) {
+    init(
+        store: WorkspaceStore = WorkspaceStore(),
+        runtime: VppRuntime = VppRuntime(state: .default),
+        llmClient: LLMClient
+    ) {
         self.store = store
         self.vppRuntime = runtime
+        self.llmClient = llmClient
 
         store.objectWillChange
                 .receive(on: RunLoop.main)
@@ -105,17 +120,257 @@ final class WorkspaceViewModel: ObservableObject {
                 }
                 .store(in: &cancellables)
 
-        if let project = store.allProjects.first(where: { $0.name == "Getting Started" }) ?? store.allProjects.first {
-            selectedProjectID = project.id
-            if let trackID = project.tracks.first,
-               let track = store.track(id: trackID),
-               let sceneID = track.lastOpenedSceneID ?? track.scenes.first {
-                selectedTrackID = track.id
-                selectedSceneID = sceneID
-            }
+        bootstrapPersistence()
+    }
+// MARK: - Persistence bootstrap
+    private func bootstrapPersistence() {
+        do {
+            var reg = try WorkspaceRegistry.loadOrCreate()
+            registry = reg
+            let active = try reg.activeWorkspaceID()
+                ?? reg.entries.first(where: { $0.deletedAt == nil })?.id
+                ?? (try reg.createWorkspace(name: "Default").id)
+            try openWorkspace(active, registry: &reg)
+        } catch {
+            print("❌ Workspace bootstrap failed: \(error)")
         }
     }
 
+    @MainActor
+    func openWorkspace(_ id: UUID) throws {
+        guard var reg = registry else { return }
+        try openWorkspace(id, registry: &reg)
+        registry = reg
+    }
+
+    @MainActor
+    private func openWorkspace(_ id: UUID, registry reg: inout WorkspaceRegistry) throws {
+        try reg.setActive(id)
+        activeWorkspaceID = id
+        activeWorkspaceName = reg.entry(for: id)?.name ?? "Workspace"
+        let sqliteURL = reg.sqliteURL(for: id)
+        db = try WorkspaceDB(workspaceID: id, sqliteURL: sqliteURL)
+        repo = WorkspaceRepository(db: db!)
+        store.setRepository(repo)                 // ✅ new helper on store
+        try store.loadFromRepository()            // ✅ loads projects/tracks/scenes/blocks/messages
+        syncConsoleSessionsFromBlocks()
+        reloadLibraryTree()
+        reloadTrash()
+    }
+
+    @MainActor
+    func reloadLibraryTree() {
+        guard let repo else { return }
+        do { libraryTree = try repo.fetchLibraryTree(includeDeleted: false) }
+        catch { print("❌ fetchLibraryTree failed: \(error)") }
+    }
+
+    @MainActor
+    func reloadTrash() {
+        guard let repo else { return }
+        do { trashRoots = try repo.fetchTrashRoots() }
+        catch { print("❌ fetchTrashRoots failed: \(error)") }
+    }
+
+    // MARK: - UI Actions (sidebar)
+    @MainActor func uiCreateEnvironment() { uiPromptName(defaultName: "Environment") { [self] name in
+        guard let repo else { return }
+        do { _ = try repo.createEnvironment(name: name); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
+    }}
+
+    @MainActor func uiCreateProject(in envID: UUID) { uiPromptName(defaultName: "Project") { [self] name in
+        guard let repo else { return }
+        do { _ = try repo.createProject(environmentID: envID, name: name); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
+    }}
+
+    @MainActor func uiCreateTrack(in projectID: UUID) { uiPromptName(defaultName: "Track") { [self] name in
+        guard let repo else { return }
+        do { _ = try repo.createTrack(projectID: projectID, name: name); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
+    }}
+
+    @MainActor func uiCreateScene(in trackID: UUID) { uiPromptName(defaultName: "Scene") { [self] title in
+        guard let repo else { return }
+        do { _ = try repo.createScene(trackID: trackID, title: title); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
+    }}
+
+    @MainActor func uiRename(req: RenameRequest, newValue: String) {
+        guard let repo else { return }
+        do {
+            switch req.kind {
+            case .environment: try repo.renameEnvironment(id: req.entityID, name: newValue)
+            case .project: try repo.renameProject(id: req.entityID, name: newValue)
+            case .track: try repo.renameTrack(id: req.entityID, name: newValue)
+            case .scene: try repo.renameScene(id: req.entityID, title: newValue)
+            }
+            try store.loadFromRepository()
+            reloadLibraryTree()
+        } catch { print(error) }
+    }
+
+    @MainActor func uiMoveProject(_ projectID: UUID, toEnvironment envID: UUID) {
+        guard let repo else { return }
+        do { try repo.moveProject(projectID: projectID, toEnvironmentID: envID); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
+    }
+    @MainActor func uiMoveTrack(_ trackID: UUID, toProject projID: UUID) {
+        guard let repo else { return }
+        do { try repo.moveTrack(trackID: trackID, toProjectID: projID); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
+    }
+    @MainActor func uiMoveScene(_ sceneID: UUID, toTrack trackID: UUID) {
+        guard let repo else { return }
+        do { try repo.moveScene(sceneID: sceneID, toTrackID: trackID); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
+    }
+
+    @MainActor func uiTrashEnvironment(_ id: UUID, title: String) { confirmTrash(title) { [weak self] in
+        guard let self, let repo = self.repo else { return }
+        do { try repo.trashEnvironment(id: id); try self.store.loadFromRepository(); self.reloadLibraryTree(); self.reloadTrash() } catch { print(error) }
+    }}
+    @MainActor func uiTrashProject(_ id: UUID, title: String) { confirmTrash(title) { [weak self] in
+        guard let self, let repo = self.repo else { return }
+        do { try repo.trashProject(id: id); try self.store.loadFromRepository(); self.reloadLibraryTree(); self.reloadTrash() } catch { print(error) }
+    }}
+    @MainActor func uiTrashTrack(_ id: UUID, title: String) { confirmTrash(title) { [weak self] in
+        guard let self, let repo = self.repo else { return }
+        do { try repo.trashTrack(id: id); try self.store.loadFromRepository(); self.reloadLibraryTree(); self.reloadTrash() } catch { print(error) }
+    }}
+    @MainActor func uiTrashScene(_ id: UUID, title: String) { confirmTrash(title) { [weak self] in
+        guard let self, let repo = self.repo else { return }
+        do { try repo.trashScene(id: id); try self.store.loadFromRepository(); self.reloadLibraryTree(); self.reloadTrash() } catch { print(error) }
+    }}
+    @MainActor func uiTrashBlock(_ id: UUID, title: String) { confirmTrash(title) { [weak self] in
+        guard let self, let repo = self.repo else { return }
+        do { try repo.trashBlock(id: id); try self.store.loadFromRepository(); self.reloadLibraryTree(); self.reloadTrash() } catch { print(error) }
+    }}
+
+    @MainActor func uiEmptyTrash() {
+        guard let repo else { return }
+        do { try repo.emptyTrash(); try store.loadFromRepository(); reloadLibraryTree(); reloadTrash() } catch { print(error) }
+    }
+
+    struct RestoreDestination: Identifiable { let id: UUID; let title: String }
+    func restoreDestinations(for kind: RestoreRequest.Kind) -> [RestoreDestination] {
+        switch kind {
+        case .project:
+            return libraryTree.map { .init(id: $0.id, title: $0.name) }
+        case .track:
+            return libraryTree.flatMap { env in env.projects.map { .init(id: $0.id, title: "\(env.name) ▸ \($0.name)") } }
+        case .scene:
+            return libraryTree.flatMap { env in
+                env.projects.flatMap { p in
+                    p.tracks.map { .init(id: $0.id, title: "\(env.name) ▸ \(p.name) ▸ \($0.name)") }
+                }
+            }
+        default:
+            return []
+        }
+    }
+    func defaultRestoreDestination(for kind: RestoreRequest.Kind) -> UUID? {
+        restoreDestinations(for: kind).first?.id
+    }
+
+    @MainActor func uiRestore(req: RestoreRequest, destinationID: UUID?) {
+        guard let repo else { return }
+        do {
+            switch req.kind {
+            case .environment:
+                try repo.restoreEnvironment(id: req.entityID)
+            case .project:
+                guard let env = destinationID else { return }
+                try repo.restoreProject(id: req.entityID, toEnvironmentID: env)
+            case .track:
+                guard let proj = destinationID else { return }
+                try repo.restoreTrack(id: req.entityID, toProjectID: proj)
+            case .scene:
+                guard let track = destinationID else { return }
+                try repo.restoreScene(id: req.entityID, toTrackID: track)
+            case .block:
+                // blocks restore in-place
+                // (repo.restoreBlock can be added if you decide to allow restoring blocks explicitly)
+                try repo.restoreScene(id: req.entityID, toTrackID: destinationID ?? UUID()) // no-op guard below
+            }
+            try store.loadFromRepository()
+            reloadLibraryTree()
+            reloadTrash()
+        } catch { print(error) }
+    }
+
+    @MainActor func uiSelectScene(_ sceneID: UUID) {
+        selectedSceneID = sceneID
+        goToStudio()
+    }
+    @MainActor func uiSelectBlockInStudio(_ blockID: UUID, sceneID: UUID) {
+        selectedSceneID = sceneID
+        selectedBlockID = blockID
+        goToStudio()
+    }
+    @MainActor func uiSelectConversationBlock(_ blockID: UUID, sceneID: UUID) {
+        selectedSceneID = sceneID
+        selectedBlockID = blockID
+        selectedSessionID = blockID
+        goToConsole()
+    }
+
+    // MARK: - Panels (macOS only, small + inline)
+    private func uiPromptName(defaultName: String, onCommit: @escaping (String) -> Void) {
+        #if os(macOS)
+        let alert = NSAlert()
+        alert.messageText = "Name"
+        alert.informativeText = ""
+        let tf = NSTextField(string: defaultName)
+        tf.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+        alert.accessoryView = tf
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            let s = tf.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty { onCommit(s) }
+        }
+        #endif
+    }
+
+    private func confirmTrash(_ title: String, onConfirm: @escaping () -> Void) {
+        #if os(macOS)
+        let alert = NSAlert()
+        alert.messageText = "Move to Trash?"
+        alert.informativeText = "“\(title)” will be moved to Trash. You can restore it later."
+        alert.addButton(withTitle: "Move to Trash")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { onConfirm() }
+        #endif
+    }
+
+    @MainActor func uiExportWorkspace() {
+        #if os(macOS)
+        guard let repo, let reg = registry else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(activeWorkspaceName).vppworkspace"
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        if panel.runModal() == .OK, let url = panel.url {
+            do { try repo.exportWorkspace(to: url) } catch { print(error) }
+        }
+        #endif
+    }
+
+    @MainActor func uiImportWorkspace() {
+        #if os(macOS)
+        var reg = registry
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                var r = try WorkspaceRegistry.loadOrCreate()
+                var entry = try r.createWorkspace(name: url.deletingPathExtension().lastPathComponent)
+                try WorkspaceRepository.importWorkspacePayload(from: url, toWorkspaceID: entry.id)
+                r.entries.append(entry)
+                try r.save()
+                registry = r
+                try openWorkspace(entry.id, registry: &r)
+            } catch { print(error) }
+        }
+        #endif
+    }
     // MARK: - Console session lifecycle
 
     /// Ensure there is at least one console session and that selectedSessionID is set.
@@ -880,12 +1135,14 @@ extension WorkspaceViewModel {
         config: LLMRequestConfig,
         assumptions: AssumptionsConfig = .none,          // ✅ add
         sourcesTable: [VppSourceRef] = [],
-    llmConfigStore: LLMConfigStore = .shared,
         existingUserMessageID: UUID? = nil
     ) async {
+        print("SEND enter instanceID=\(instanceID) sessionID=\(sessionID) model=\(config.modelID)")
         let index = upsertConsoleSessionIndex(for: sessionID)
         var session = consoleSessions[index]
         let timestamp = Date()
+        // Keep runtime assumptions count in sync so makeFooter() is accurate
+        vppRuntime.setAssumptions(assumptions.persistedCount)
         // ✅ Replies should persist into the *conversation block*:
             // - if this session is "about" a studio block, use that blockID
             // - otherwise, the sessionID itself is the conversation ID
@@ -951,7 +1208,9 @@ extension WorkspaceViewModel {
 
 
         // ✅ build request messages
-        var requestMessages: [LLMMessage] = session.messages.map { message in
+        var requestMessages: [LLMMessage] = session.messages
+            .filter { $0.id != pendingMessage.id }
+            .map { message in
             let role: LLMRole
             switch message.role {
             case .system: role = .system
@@ -960,7 +1219,8 @@ extension WorkspaceViewModel {
             }
             return LLMMessage(id: message.id, role: role, content: message.text)
         }
-
+        // ✅ ALWAYS-on base VPP system prompt (must be first system message)
+        requestMessages.insert(LLMMessage(role: .system, content: VppSystemPrompt.base), at: 0)
         // ✅ EPHEMERAL assumptions attachment (not persisted in session.messages)
         if let attachment = assumptions.assumptionsAttachmentText {
             requestMessages.insert(
@@ -969,19 +1229,14 @@ extension WorkspaceViewModel {
             )
         }
         // ✅ EPHEMERAL sources instruction + table for “footer A + per-message sources table”
-                if !sourcesTable.isEmpty {
-                    let table = sourcesTable.asVppSourcesTableMarkdown()
-                    let instruction = """
-        You MUST include a per-message sources table and compact source tokens in the compliance footer.
-        
-        Rules:
-        1) In the footer, set Sources=<s1,s2,...> using the IDs below (comma-separated, no spaces).
-        2) Include the following table verbatim in your reply body immediately above the footer (keep the header rows):
-        \(table)
-        3) If there are zero sources, set Sources=<none> and omit the table.
-        """
-                    requestMessages.insert(LLMMessage(role: .system, content: instruction), at: 0)
-                }
+        if !sourcesTable.isEmpty {
+                   let table = sourcesTable.asVppSourcesTableMarkdown()
+                  requestMessages.insert(
+                    LLMMessage(role: .system, content: VppSystemPrompt.sourcesInstruction(tableMarkdown: table)),
+                    at: 0
+                  )
+                 }
+
         let request = LLMRequest(
             modelID: config.modelID,
             temperature: config.temperature,
@@ -989,24 +1244,31 @@ extension WorkspaceViewModel {
             messages: requestMessages
         )
 
-        let client = LLMClientFactory.makeClient(config: llmConfigStore)
-
         do {
-            let response = try await client.send(request)
+            
+            print("SEND calling llmClient…")
+            let response = try await llmClient.send(request)
+            
+            print("SEND llmClient returned chars=\(response.text.count)")
+           
+                       // ✅ Make VPP compliance deterministic (no reliance on the model)
+                       // For now: Sources token is derived from the known call context:
+                       let sourcesToken = sourcesTable.isEmpty ? "none" : "web"
+                       let coerced = coerceVppAssistantReply(response.text, sourcesToken: sourcesToken)
 
             guard let latestIndex = consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }
             var latestSession = consoleSessions[latestIndex]
 
             if let pendingIndex = latestSession.messages.firstIndex(where: { $0.id == pendingMessage.id }) {
-                latestSession.messages[pendingIndex].text = response.text
+                latestSession.messages[pendingIndex].text = coerced
                 latestSession.messages[pendingIndex].state = .normal
-                latestSession.messages[pendingIndex].vppValidation = vppRuntime.validateAssistantReply(response.text)
+                latestSession.messages[pendingIndex].vppValidation = vppRuntime.validateAssistantReply(coerced)
             }
             
             // ✅ persist assistant reply into WorkspaceStore Block
             let st2 = vppRuntime.state
-            let validation = vppRuntime.validateAssistantReply(response.text)
-            let parsedTable = vppRuntime.parseSourcesTable(from: response.text)
+            let validation = vppRuntime.validateAssistantReply(coerced)
+            let parsedTable = vppRuntime.parseSourcesTable(from: coerced)
             let assistantSourcesSummary: VppSources = {
                 if !parsedTable.isEmpty { return VppSources.summary(for: parsedTable) }
                 if let token = vppRuntime.extractFooterSourcesValue(response.text),
@@ -1021,7 +1283,7 @@ extension WorkspaceViewModel {
                 id: pendingMessage.id,
                 isUser: false,
                 timestamp: assistantTimestamp,
-                body: response.text,
+                body: coerced,
                 tag: st2.currentTag,
                 cycleIndex: st2.cycleIndex,
                 assumptions: 0,
@@ -1041,18 +1303,75 @@ extension WorkspaceViewModel {
             consoleSessions[latestIndex] = latestSession
 
             // footer ingestion keeps tag/cycle/locus in sync
-            vppRuntime.ingestFooterLine(response.text)
+            vppRuntime.ingestFooterLine(coerced)
 
         } catch {
             guard let latestIndex = consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }
             var latestSession = consoleSessions[latestIndex]
 
             if let pendingIndex = latestSession.messages.firstIndex(where: { $0.id == pendingMessage.id }) {
+                let msg = "⚠️ \(error.localizedDescription)"
+                latestSession.messages[pendingIndex].text = msg
                 latestSession.messages[pendingIndex].state = .error(message: error.localizedDescription)
             }
+            // ✅ persist assistant error into WorkspaceStore Block so syncConsoleSessionsFromBlocks won’t resurrect a “pending” UI state
+                      let conversationID = latestSession.rootBlock?.blockID ?? sessionID
+                      let st2 = vppRuntime.state
+                      let assistantTimestamp = Date()
+                      let blockAssistant = Message(
+                        id: pendingMessage.id,
+                        isUser: false,
+                        timestamp: assistantTimestamp,
+                        body: "⚠️ \(error.localizedDescription)",
+                        tag: st2.currentTag,
+                        cycleIndex: st2.cycleIndex,
+                        assumptions: 0,
+                        sources: .none,
+                        sourcesTable: [],
+                        locus: st2.locus,
+                        isValidVpp: false,
+                        validationIssues: ["LLM request failed: \(error.localizedDescription)"]
+                      )
+                      store.appendMessage(to: conversationID, blockAssistant)
+                      syncConsoleSessionsFromBlocks()
 
-            latestSession.requestStatus = .error(message: error.localizedDescription)
+            latestSession.requestStatus = .idle
             consoleSessions[latestIndex] = latestSession
+
+            print("SEND error:", error)
         }
     }
+    private func coerceVppAssistantReply(_ raw: String, sourcesToken: String) -> String {
+      var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+      // 1) Ensure leading tag line exists
+      let expectedTagLine = "<\(vppRuntime.state.currentTag.rawValue)>"
+      let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+      let firstNonEmptyIndex = lines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+
+      if let idx = firstNonEmptyIndex {
+        let first = lines[idx].trimmingCharacters(in: .whitespacesAndNewlines)
+        if !first.hasPrefix("<") {
+          text = expectedTagLine + "\n\n" + text
+        }
+      } else {
+        text = expectedTagLine
+      }
+
+      // 2) Ensure footer exists (exactly one)
+      let footer = vppRuntime.makeFooter(sources: .none, sourceTokens: [sourcesToken])
+      let outLines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+      let hasFooter = outLines.last.map { last in
+        let s = last.trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.hasPrefix("[") && s.contains("Version=v1.4") && s.contains("Tag=<") && s.contains("Cycle=")
+      } ?? false
+
+      if !hasFooter {
+        text += "\n\n" + footer
+      }
+
+      return text
+    }
+
 }

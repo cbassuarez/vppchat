@@ -2,12 +2,11 @@ import SwiftUI
 
 struct ConsoleShellView: View {
     @EnvironmentObject private var workspace: WorkspaceViewModel
-    @EnvironmentObject private var appViewModel: AppViewModel
     var body: some View {
         HStack(spacing: 16) {
-            ConsoleSessionSidebar()
+            WorkspaceLibrarySidebar()
                 .environmentObject(workspace)
-                .frame(width: 260)
+                .frame(width: 300)
 
             if let selected = workspace.selectedConsoleSession {
                 HStack(spacing: 0) {
@@ -30,9 +29,9 @@ struct ConsoleShellView: View {
             }
         }
         .onAppear {
-            workspace.ensureDefaultConsoleSession()
             workspace.syncConsoleSessionsFromBlocks()
             print("ConsoleShellView workspace instance: \(workspace.instanceID)")
+            workspace.ensureDefaultConsoleSession()
         }
 
     }
@@ -161,6 +160,8 @@ private struct ConsoleSessionView: View {
             guard token != lastComposerFocusToken else { return }
             lastComposerFocusToken = token
             composerFocused = true
+            print("UI   workspace.instanceID =", workspace.instanceID)
+
         }
     }
 
