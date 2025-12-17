@@ -205,10 +205,22 @@ struct VPPChatApp: App {
               .environmentObject(appViewModel.workspace)
               .environmentObject(themeManager)
               .environmentObject(llmConfig)
+              .sheet(
+                 isPresented: Binding(
+                   get: { workspaceVM.isFirstRunOnboardingPresented },
+                   set: { workspaceVM.isFirstRunOnboardingPresented = $0 }
+                 )
+               ) {
+                FirstRunOnboardingWizard()
+                  .environmentObject(workspaceVM)
+              }
+
               .onAppear {
                 workspaceVM.switchToShell = { mode in shellMode = mode }
                 workspaceVM.currentShellMode = shellMode
                 workspaceVM.ensureDefaultConsoleSession()
+                  DispatchQueue.main.async { workspaceVM.isFirstRunOnboardingPresented = true }
+
               }
               .onChange(of: shellMode) { newValue in
                 workspaceVM.currentShellMode = newValue
@@ -226,6 +238,7 @@ struct VPPChatApp: App {
                 }
                 workspaceVM.currentShellMode = shellMode
                 workspaceVM.ensureDefaultConsoleSession()
+                DispatchQueue.main.async { workspaceVM.isFirstRunOnboardingPresented = true }
             }
             .onChange(of: shellMode) { newValue in
                 workspaceVM.currentShellMode = newValue

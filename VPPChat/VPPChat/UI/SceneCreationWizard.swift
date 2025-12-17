@@ -152,11 +152,14 @@ public struct SceneCreationWizard: View {
 
 
         case .createScene:
-            createNameStep(
-                label: model.state.goal == .newChat ? "Chat name" : "Scene name",
-                text: $model.state.sceneName,
-                placeholder: model.state.goal == .newChat ? "e.g. Today" : "e.g. Welcome"
-            )
+            VStack(alignment: .leading, spacing: 10) {
+                            Text("No naming here.")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Scenes are auto-named after your first message. You can rename later if you want.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+
         }
     }
 
@@ -469,12 +472,9 @@ extension SceneCreationWizard {
 
                 case .createScene:
                     guard let trackID = state.trackID else { state.errorText = "Missing track."; return }
-                    let name = state.sceneName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !name.isEmpty else { state.errorText = "Scene name can’t be empty."; return }
-
-
-                    let sceneID = try await api.createScene(trackID: trackID, name: name)
-                    state.pendingNewSceneID = sceneID
+                    state.sceneName = ""
+                                        let placeholderTitle = "Untitled"
+                                        let sceneID = try await api.createScene(trackID: trackID, name: placeholderTitle)
 
 
                     // completion invariant
@@ -530,7 +530,7 @@ private extension SceneWizardState {
         case .populateTrack:
             return "Track must end with at least one scene (move or create). Wizard still ends by creating a new Scene."
         case .createScene:
-            return "This is always the final step. Completion creates a brand-new Scene and navigates."
+            return "This is always the final step. Completion creates a brand-new Scene, auto-named after first message."
         }
     }
 }

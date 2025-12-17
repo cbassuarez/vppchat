@@ -83,6 +83,53 @@ final class WorkspaceViewModel: ObservableObject {
             }
         }
     
+    @Published var isFirstRunOnboardingPresented: Bool = false
+
+      private func onboardingKey(_ workspaceID: UUID) -> String {
+        "vppchat.onboarding.completed.\(workspaceID.uuidString)"
+      }
+    
+      @MainActor
+      func maybePresentFirstRunOnboarding() {
+        // show only once per workspace, and only if we’re basically still in seed-land
+        let done = UserDefaults.standard.bool(forKey: onboardingKey(activeWorkspaceID))
+        guard done == false else { return }
+        guard store.isSeedOnlyWorkspace else { return }
+        isFirstRunOnboardingPresented = true
+      }
+    
+      private func markOnboardingComplete() {
+        UserDefaults.standard.set(true, forKey: onboardingKey(activeWorkspaceID))
+      }
+    
+      @MainActor
+      func completeFirstRunOnboarding(environmentName: String, projectName: String, trackName: String) async {
+        guard let repo else { return }
+        do {
+          // Rename the seeded spine to “teach the model”
+          try repo.renameEnvironment(id: UUID(uuidString: WorkspaceDB.SeedIDs.envMain)!, name: environmentName)
+          try repo.renameProject(id: UUID(uuidString: WorkspaceDB.SeedIDs.projGettingStarted)!, name: projectName)
+          try repo.renameTrack(id: UUID(uuidString: WorkspaceDB.SeedIDs.track1)!, name: trackName)
+    
+          try store.loadFromRepository()
+    
+          // Seed the demo “model” content inside Getting Started
+          _ = store.ensureGettingStartedModelSeeded()
+    
+          // Land them in Studio at the “model” scene
+          if let scene = store.scene(id: UUID(uuidString: WorkspaceDB.SeedIDs.sceneChat)!) {
+            select(scene: scene)
+          }
+          goToStudio()
+    
+          markOnboardingComplete()
+          isFirstRunOnboardingPresented = false
+        } catch {
+          print("❌ completeFirstRunOnboarding failed:", error)
+        }
+      }
+
+    
     @MainActor
     func quickNewChat(openInConsole: Bool) {
         // 1) Resolve (or create) a Track
@@ -173,6 +220,11 @@ final class WorkspaceViewModel: ObservableObject {
         self.vppRuntime = runtime
         self.llmClient = llmClient
 
+        // ✅ allow WorkspaceStore to ask for completion-based scene naming
+         self.store.requestAutoTitleScene = { [weak self] sceneID in
+           await self?.autoTitleSceneUsingCompletions(sceneID: sceneID)
+         }
+
         store.objectWillChange
                 .receive(on: RunLoop.main)
                 .sink { [weak self] _ in
@@ -217,10 +269,15 @@ final class WorkspaceViewModel: ObservableObject {
         db = try WorkspaceDB(workspaceID: id, sqliteURL: sqliteURL)
         repo = WorkspaceRepository(db: db!)
         store.setRepository(repo)                 // ✅ new helper on store
-        try store.loadFromRepository()            // ✅ loads projects/tracks/scenes/blocks/messages
         syncConsoleSessionsFromBlocks()
         reloadLibraryTree()
         reloadTrash()
+        
+        // Defer one runloop so the root view is ready to present a sheet
+          DispatchQueue.main.async { [weak self] in
+            self?.maybePresentFirstRunOnboarding()
+          }
+
     }
 
     @MainActor
@@ -1150,6 +1207,7 @@ extension WorkspaceViewModel {
 }
 
 // MARK: - Semantic auto-naming
+
 extension WorkspaceViewModel {
 
     private enum AutoNameKind: String {
@@ -1188,27 +1246,43 @@ extension WorkspaceViewModel {
     private func shouldAutoNameConversation(_ block: Block) -> Bool {
         guard block.kind == .conversation else { return false }
         guard !block.isCanonical else { return false }
-        return isPlaceholder(block.title, prefix: "Session") || block.title == "Session"
+        return isUntitled(block.title) || isPlaceholder(block.title, prefix: "Session") || block.title == "Session"
     }
 
     private func shouldAutoNameScene(_ scene: Scene) -> Bool {
-        guard isPlaceholder(scene.title, prefix: "Scene") || scene.title == "Scene" else { return false }
+        guard isUntitled(scene.title) || isPlaceholder(scene.title, prefix: "Scene") || scene.title == "Scene" else { return false }
         // avoid system containers if they ever come through as scenes
         if scene.title == "Console Chats" || scene.title == "Welcome" { return false }
         return true
     }
 
     private func shouldAutoNameTrack(_ track: Track) -> Bool {
-        guard isPlaceholder(track.name, prefix: "Track") || track.name == "Track" else { return false }
+        guard isUntitled(track.name) || isPlaceholder(track.name, prefix: "Track") || track.name == "Track" else { return false }
         if track.name == "Sessions" || track.name == "Start Here" { return false }
         return true
     }
 
     private func shouldAutoNameProject(_ project: Project) -> Bool {
-        guard isPlaceholder(project.name, prefix: "Project") || project.name == "Project" else { return false }
+        guard isUntitled(project.name) || isPlaceholder(project.name, prefix: "Project") || project.name == "Project" else { return false }
         if project.name == "Console" || project.name == "Getting Started" { return false }
         return true
     }
+    
+    @MainActor
+    func autoTitleSceneUsingCompletions(sceneID: UUID) async {
+      // Find a conversation in this scene to use as the naming seed.
+      let convoID = store.blocks.values
+        .filter { $0.sceneID == sceneID && $0.kind == .conversation }
+        .sorted { $0.updatedAt > $1.updatedAt }
+        .first?
+        .id
+
+      guard let convoID else { return }
+
+      // Reuse your existing completion-based cascade (this is the “no regression” path).
+      maybeAutoNameCascade(fromConversation: convoID, modelID: consoleModelID)
+    }
+
 
     @MainActor
     private func scheduleAutoName(_ kind: AutoNameKind, id: UUID, delayMs: UInt64 = 250, op: @escaping @MainActor () async -> Void) {
@@ -1223,9 +1297,11 @@ extension WorkspaceViewModel {
     private func buildConversationNamingContext(conversationID: UUID) -> String? {
         guard let block = store.block(id: conversationID) else { return nil }
         // use first user message as the semantic seed
-        guard let firstUser = block.messages.first(where: { $0.isUser }) else { return nil }
-        let seed = stripVppHeader(firstUser.body)
-        return seed.isEmpty ? nil : seed
+        let seed = block.messages
+          .filter { $0.isUser }
+          .map { stripVppEnvelope($0.body) }   // you already wrote this; it strips header+footer
+          .first(where: { !$0.isEmpty })
+        return seed
     }
     
     private func stripVppEnvelope(_ text: String) -> String {
@@ -1515,6 +1591,7 @@ extension WorkspaceViewModel {
                 }
             }
         }
+        print("AUTONAME convo title='\(convoBlock.title)' should=\(shouldAutoNameConversation(convoBlock)) keys=\(autoNamedKeys.contains(autoNameKey(.conversation, conversationID)))")
     }
 }
 
@@ -1700,6 +1777,15 @@ extension WorkspaceViewModel {
         return createdID
     }
 
+    private func isUntitled(_ s: String) -> Bool {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty { return true }
+            let lc = t.lowercased()
+            if lc == "untitled" { return true }
+            // treat common “new entity” defaults as untitled
+            let defaults: Set<String> = ["new scene", "new track", "new project", "new session", "new chat"]
+            return defaults.contains(lc)
+        }
 
     @MainActor
     func sendPrompt(

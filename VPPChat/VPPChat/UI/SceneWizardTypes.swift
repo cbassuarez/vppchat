@@ -1,5 +1,5 @@
 //
-//  SceneWizardTypes.swift
+//  SceneWizardGoal.swift
 //  VPPChat
 //
 //  Created by Sebastian Suarez-Solis on 12/16/25.

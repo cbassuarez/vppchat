@@ -40,6 +40,7 @@ extension WorkspaceDB {
         static let track1 = "00000000-0000-0000-0000-000000000003"
         static let sceneChat = "00000000-0000-0000-0000-000000000004"
         static let welcomeBlock = "00000000-0000-0000-0000-000000000005"
+        static let welcomeMessage = "00000000-0000-0000-0000-000000000006"
     }
 
     static var migrator: DatabaseMigrator = {

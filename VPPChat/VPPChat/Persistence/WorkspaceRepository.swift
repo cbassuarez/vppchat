@@ -191,6 +191,21 @@ final class WorkspaceRepository {
         let id = UUID()
         let now = Date().timeIntervalSince1970
         try db.pool.write { database in
+            let trackExists = try Int.fetchOne(
+                  database,
+                  sql: "SELECT 1 FROM tracks WHERE id=? AND deletedAt IS NULL LIMIT 1;",
+                  arguments: [trackID.uuidString]
+                ) != nil
+                guard trackExists else {
+                  throw NSError(
+                    domain: "WorkspaceRepository",
+                    code: 19,
+                    userInfo: [NSLocalizedDescriptionKey:
+                      "FK: createScene failed because track \(trackID) is not in `tracks`. Ensure the track is persisted before creating a scene."
+                    ]
+                  )
+                }
+
             let sortIndex = (try Int.fetchOne(database, sql: "SELECT COALESCE(MAX(sortIndex), -1) + 1 FROM scenes WHERE trackID=? AND deletedAt IS NULL;", arguments: [trackID.uuidString])) ?? 0
             try database.execute(
                 sql: "INSERT INTO scenes (id, trackID, title, sortIndex, createdAt, updatedAt, deletedAt, deletedRootID) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL);",

@@ -4,9 +4,138 @@ import GRDB
 
 final class WorkspaceStore: ObservableObject {
 private var repo: WorkspaceRepository?
+    var requestAutoTitleScene: (@MainActor (UUID) async -> Void)?
+    private var requestedAutoTitleSceneIDs: Set<UUID> = []
+
+    private var didBootstrapFromRepo = false
+    var isSeedOnlyWorkspace: Bool {
+      // “seed-only” = nothing beyond the seeded Getting Started container + canonical blocks,
+      // ignoring the Console container if it exists.
+
+      // 1) Projects: only allow Getting Started + Console
+      let userProjectExists = projects.values.contains { p in
+        p.name != gettingStartedProjectName && p.name != consoleProjectName
+      }
+      if userProjectExists { return false }
+
+      // 2) Tracks: only allow Basics + Sessions
+      let userTrackExists = tracks.values.contains { t in
+        t.name != gettingStartedTrackName && t.name != consoleTrackName
+      }
+      if userTrackExists { return false }
+
+      // 3) Scenes: only allow Welcome + Console Chats
+      let userSceneExists = scenes.values.contains { s in
+        s.title != gettingStartedSceneTitle && s.title != consoleSceneTitle
+      }
+      if userSceneExists { return false }
+
+      // 4) Blocks: allow only canonical welcome + (optional) canonical model blocks
+      let allowedCanonical: Set<UUID> = [
+        Self.canonicalWelcomeBlockID,
+        Self.canonicalModelDocBlockID,
+        Self.canonicalModelChatBlockID
+      ]
+
+      let hasAnyUserBlock = blocks.values.contains { b in
+        if b.isCanonical { return !allowedCanonical.contains(b.id) }
+        return true
+      }
+
+      return hasAnyUserBlock == false
+    }
+
+
+    static let canonicalModelDocBlockID = UUID(uuidString: "00000000-0000-0000-0000-000000000008")!
+     static let canonicalModelChatBlockID = UUID(uuidString: "00000000-0000-0000-0000-000000000009")!
+
+
+  @discardableResult
+  func ensureGettingStartedModelSeeded() -> (doc: Block, chat: Block) {
+      let sceneID = ensureGettingStartedSceneID()
+
+    let docText = """
+    **How work is organized**
+
+    Environment → Project → Track → Scene → Blocks
+
+    - **Environment**: top-level space
+    - **Project**: a body of work inside an environment
+    - **Track**: parallel lanes inside a project
+    - **Scene**: a container for blocks
+    - **Blocks**: Chat (sessions) and Docs (notes)
+    """
+
+    // Doc block (idempotent)
+    let docID = Self.canonicalModelDocBlockID
+    let doc = Block(
+      id: docID,
+      sceneID: sceneID,
+      kind: .document,
+      title: "How Work Is Organized",
+      subtitle: "READ ME FIRST",
+      messages: [],
+      documentText: docText,
+      isCanonical: true,
+      createdAt: .now,
+      updatedAt: .now
+    )
+    blocks[docID] = doc
+    persistUpsertBlock(doc)
+
+    // Chat block (idempotent)
+    let chatID = Self.canonicalModelChatBlockID
+    var chat = blocks[chatID] ?? Block(
+      id: chatID,
+      sceneID: sceneID,
+      kind: .conversation,
+      title: "Setup Assistant",
+      subtitle: "Tell me what you’re working on",
+      messages: [],
+      documentText: nil,
+      isCanonical: true,
+      createdAt: .now,
+      updatedAt: .now
+    )
+    chat.sceneID = sceneID
+    chat.kind = .conversation
+    chat.title = "Setup Assistant"
+    chat.subtitle = "Tell me what you’re working on"
+    chat.isCanonical = true
+    blocks[chatID] = chat
+    persistUpsertBlock(chat)
+
+    // Seed first assistant message only if empty
+    if blocks[chatID]?.messages.isEmpty == true {
+      let m = Message(
+        id: UUID(),
+        isUser: false,
+        timestamp: .now,
+        body: "Tell me what you’re working on — I’ll propose a Project ▸ Track ▸ Scene plan.",
+        tag: .g,
+        cycleIndex: 1,
+        assumptions: 0,
+        sources: .none,
+        sourcesTable: [],
+        locus: "Onboarding",
+        isValidVpp: true,
+        validationIssues: []
+      )
+      appendMessage(to: chatID, m)
+    }
+
+    objectWillChange.send()
+    return (blocks[docID]!, blocks[chatID]!)
+  }
 
     func setRepository(_ repo: WorkspaceRepository?) {
         self.repo = repo
+        guard repo != nil, didBootstrapFromRepo == false else { return }
+           didBootstrapFromRepo = true
+           do { try loadFromRepository() } catch { print("❌ loadFromRepository failed: \(error)") }
+           _ = ensureWelcomeConversationSeeded()
+        objectWillChange.send()
+
     }
 
     func loadFromRepository() throws {
@@ -138,10 +267,11 @@ private var repo: WorkspaceRepository?
         objectWillChange.send()
     }
     // MARK: - Canonical onboarding
-        static let canonicalWelcomeBlockID = UUID(uuidString: "A3B1C7F2-1D6A-4D1A-9C4D-5D2C1E7A9F11")!
+    static let canonicalWelcomeMessageID = UUID(uuidString: "00000000-0000-0000-0000-000000000006")!
+    static let canonicalWelcomeBlockID = UUID(uuidString: "00000000-0000-0000-0000-000000000005")!
         private var gettingStartedProjectName: String { "Getting Started" }
-        private var gettingStartedTrackName: String { "Start Here" }
-        private var gettingStartedSceneTitle: String { "Welcome" }
+    private var gettingStartedTrackName: String { "Basics" }
+    private var gettingStartedSceneTitle: String { "Welcome" }
     @Published private(set) var projects: [Project.ID: Project] = [:]
     @Published private(set) var tracks: [Track.ID: Track] = [:]
     @Published private(set) var scenes: [Scene.ID: Scene] = [:]
@@ -159,11 +289,13 @@ private var repo: WorkspaceRepository?
     
         @discardableResult
         func ensureWelcomeConversationSeeded() -> Block {
+            objectWillChange.send()
             purgeLegacyWelcomeArtifacts()
             
                     let sceneID = ensureGettingStartedSceneID()
                     let id = Self.canonicalWelcomeBlockID
-            
+            let msgID = Self.canonicalWelcomeMessageID
+
                     let welcomeBody = """
             Welcome to **VPP Studio** 👋
             
@@ -190,7 +322,7 @@ private var repo: WorkspaceRepository?
             """
             
                     let welcomeAssistant = Message(
-                        id: UUID(),
+                        id: msgID,
                         isUser: false,
                         timestamp: .now,
                         body: welcomeBody,
@@ -205,15 +337,38 @@ private var repo: WorkspaceRepository?
             
                     if var existing = blocks[id] {
                         // Upsert-in-place (stable ID)
-                        existing.sceneID = sceneID
-                        existing.kind = .conversation
-                        existing.title = "Welcome"
-                        existing.subtitle = "G_1 · 0 assumptions · GETTING-STARTED"
-                        existing.isCanonical = true
-                        existing.messages = [welcomeAssistant]
-                        existing.updatedAt = .now
-                        blocks[id] = existing
-                        return existing
+                        let hasWelcomeMessage = existing.messages.contains(where: { $0.id == msgID })
+                               let hasCorrectBody = existing.messages.first(where: { $0.id == msgID })?.body == welcomeBody
+                               let needsShapeRepair =
+                                   existing.sceneID != sceneID ||
+                                   existing.kind != .conversation ||
+                                   existing.title != "Welcome" ||
+                                   existing.subtitle != "G_1 · 0 assumptions · GETTING-STARTED" ||
+                                   existing.isCanonical != true
+                       
+                               // If everything is already correct, do nothing (no updatedAt churn).
+                               if !needsShapeRepair && hasWelcomeMessage && hasCorrectBody {
+                                   return existing
+                               }
+                       
+                               // Repair in-place (stable IDs). Keep updatedAt stable unless we’re creating it from scratch.
+                               existing.sceneID = sceneID
+                               existing.kind = .conversation
+                               existing.title = "Welcome"
+                               existing.subtitle = "G_1 · 0 assumptions · GETTING-STARTED"
+                               existing.isCanonical = true
+                       
+                               // Ensure exactly one canonical welcome assistant message.
+                               existing.messages.removeAll(where: { $0.locus == "Welcome" || $0.id == msgID })
+                               existing.messages = [welcomeAssistant]
+                       
+                               blocks[id] = existing
+                        objectWillChange.send()
+
+                               persistUpsertBlock(existing)
+                               persistAppendMessage(blockID: id, message: welcomeAssistant, newBlockUpdatedAt: existing.updatedAt)
+                               return existing
+
                     }
             
                     let block = Block(
@@ -229,6 +384,9 @@ private var repo: WorkspaceRepository?
                         updatedAt: .now
                     )
                     blocks[id] = block
+            objectWillChange.send()
+            persistUpsertBlock(block)
+            persistAppendMessage(blockID: id, message: welcomeAssistant, newBlockUpdatedAt: block.updatedAt)
                     return block
         }
     func block(id: Block.ID?) -> Block? {
@@ -239,6 +397,8 @@ private var repo: WorkspaceRepository?
     func update(block: Block) {
         objectWillChange.send()
         blocks[block.id] = block
+        persistUpsertBlock(block)
+
     }
 
     // MARK: - Console container (Project ▸ Track ▸ Scene)
@@ -344,12 +504,10 @@ private var repo: WorkspaceRepository?
             createdAt: .now,
             updatedAt: .now
         )
-        blocks[block.id] = block
+        add(block: block)
         return block
     }
-    init() {
-        seedDemoData()
-    }
+    init() {}
 
     var allProjects: [Project] {
         projects.values.sorted { $0.name < $1.name }
@@ -406,6 +564,7 @@ private var repo: WorkspaceRepository?
     func add(block: Block) {
         objectWillChange.send()
         blocks[block.id] = block
+        persistUpsertBlock(block)
     }
 
     private func seedDemoData() {
@@ -420,7 +579,92 @@ private var repo: WorkspaceRepository?
         block.messages.append(message)
         block.updatedAt = .now
         blocks[blockID] = block
+        
+        // ✅ Persist: message row + bump block.updatedAt in DB (no-op if repo not set)
+                persistAppendMessage(blockID: blockID, message: message, newBlockUpdatedAt: block.updatedAt)
+        
+                // ✅ Auto-title: only for newly-created scenes (placeholder title)
+        if message.isUser, let sceneID = blocks[blockID]?.sceneID {
+              maybeRequestCompletionAutoTitle(sceneID: sceneID)
+            }
+
     }
+
+// MARK: - Persistence (write-through)
+    private func persistUpsertBlock(_ block: Block) {
+        guard let repo else { return }
+        do {
+            let createdAt = block.createdAt.timeIntervalSince1970
+            let updatedAt = block.updatedAt.timeIntervalSince1970
+            try repo.pool.write { db in
+                let args = (StatementArguments([
+                                   block.id.uuidString,
+                                   block.sceneID.uuidString,
+                                   block.kind.rawValue,
+                                   block.title,
+                                   block.subtitle,          // String?
+                                   block.isCanonical ? 1 : 0,
+                                   block.documentText,      // String?
+                                   createdAt,
+                                   updatedAt
+                               ]) ?? StatementArguments())
+                try db.execute(sql: """
+                  INSERT OR REPLACE INTO blocks
+                  (id, sceneID, kind, title, subtitle, isCanonical, documentText, createdAt, updatedAt, deletedAt, deletedRootID)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL);
+                  """, arguments: args)
+            }
+        } catch {
+            print("❌ persistUpsertBlock failed: \(error)")
+        }
+    }
+
+    private func persistAppendMessage(blockID: UUID, message: Message, newBlockUpdatedAt: Date) {
+        guard let repo else { return }
+        do {
+            let sourcesTableJSON = String(data: (try JSONEncoder().encode(message.sourcesTable)), encoding: .utf8) ?? "[]"
+            let issuesJSON = String(data: (try JSONEncoder().encode(message.validationIssues)), encoding: .utf8) ?? "[]"
+            try repo.pool.write { db in
+                // message
+                try db.execute(sql: """
+                  INSERT OR REPLACE INTO messages
+                  (id, blockID, isUser, timestamp, body, tag, cycleIndex, assumptions, sources, sourcesTableJSON, locus, isValidVpp, validationIssuesJSON)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """, arguments: [
+                    message.id.uuidString,
+                    blockID.uuidString,
+                    message.isUser ? 1 : 0,
+                    message.timestamp.timeIntervalSince1970,
+                    message.body,
+                    message.tag.rawValue,
+                    message.cycleIndex,
+                    message.assumptions,
+                    message.sources.rawValue,
+                    sourcesTableJSON,
+                    message.locus,
+                    message.isValidVpp ? 1 : 0,
+                    issuesJSON
+                ])
+                // bump block.updatedAt
+                try db.execute(
+                    sql: "UPDATE blocks SET updatedAt=? WHERE id=?;",
+                    arguments: [newBlockUpdatedAt.timeIntervalSince1970, blockID.uuidString]
+                )
+            }
+        } catch {
+            print("❌ persistAppendMessage failed: \(error)")
+        }
+    }
+
+    // MARK: - Auto scene naming (after first user turn)
+    @MainActor
+      private func maybeRequestCompletionAutoTitle(sceneID: UUID) {
+        guard let scene = scenes[sceneID] else { return }
+        guard scene.title == "Untitled" else { return }
+        guard requestedAutoTitleSceneIDs.insert(sceneID).inserted else { return } // one-shot
+        guard let requestAutoTitleScene else { return }
+        Task { await requestAutoTitleScene(sceneID) }
+      }
 
     func allBlocksSortedByUpdatedAtDescending() -> [Block] {
         blocks.values.sorted { $0.updatedAt > $1.updatedAt }

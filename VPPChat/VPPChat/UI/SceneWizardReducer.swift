@@ -86,7 +86,7 @@ public struct SceneWizardReducer {
 
 
         case .createScene:
-            return (state.trackID != nil) && !trim(state.sceneName).isEmpty
+            return state.trackID != nil
         }
     }
 

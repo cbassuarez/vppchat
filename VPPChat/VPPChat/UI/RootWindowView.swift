@@ -46,6 +46,10 @@ struct RootWindowView: View {
             onDismiss: { workspaceVM.isSceneCreationWizardPresented = false }
         )
     }
+    .sheet(isPresented: $workspaceVM.isFirstRunOnboardingPresented) {
+          FirstRunOnboardingWizard()
+            .environmentObject(workspaceVM)
+        }
 
   }
 }
