@@ -36,12 +36,9 @@ struct StudioView: View {
                 .padding(.vertical, 12)
                 .panelBackground()
             }
-            .sheet(isPresented: $vm.isNewEntityWizardPresented) {
-                NewEntityWizard().environmentObject(vm)
-            }
-            .padding(18)
-            .onAppear { print("StudioView workspace instance: \(vm.instanceID)") }
         }
+        .padding(18)
+        .onAppear { print("studioView workspace instance: \(vm.instanceID)") }
         .overlayPreferenceValue(StudioPopoverAnchorKey.self) { anchors in
             GeometryReader { proxy in
                 ZStack(alignment: .topLeading) {
@@ -208,9 +205,10 @@ struct StudioView: View {
                     activePopover = nil
                 },
                 onNewWizard: {
-                    vm.presentNewEntityWizard(initialKind: .scene)
-                    activePopover = nil
-                }
+                                vm.presentSceneCreationWizard(initialGoal: .newScene)
+                                activePopover = nil
+                            }
+
             )
         }
     }

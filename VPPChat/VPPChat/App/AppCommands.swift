@@ -53,10 +53,11 @@ struct AppCommands: Commands {
         
         CommandMenu("File") {
             Button("New…") {
-                workspaceViewModel.presentNewEntityWizard()
+                workspaceViewModel.presentSceneCreationWizard(initialGoal: .newScene)
             }
             .keyboardShortcut("n", modifiers: .command)
         }
+
 
         CommandMenu("Studio") {
             Button("Next Scene") {

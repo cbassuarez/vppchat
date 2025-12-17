@@ -39,9 +39,13 @@ struct RootWindowView: View {
     }
     .animation(.easeInOut(duration: AppTheme.Motion.medium),
                value: workspaceVM.isCommandSpaceVisible)
-    .sheet(isPresented: $workspace.isNewEntityWizardPresented) {
-        NewEntityWizard()
-            .environmentObject(workspace)
+    .sheet(isPresented: $workspaceVM.isSceneCreationWizardPresented) {
+        SceneCreationWizard(
+            api: WorkspaceSceneWizardAdapter(vm: workspaceVM),
+            initialGoal: workspaceVM.sceneCreationWizardInitialGoal,
+            onDismiss: { workspaceVM.isSceneCreationWizardPresented = false }
+        )
     }
+
   }
 }

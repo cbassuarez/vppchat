@@ -24,6 +24,13 @@ final class WorkspaceViewModel: ObservableObject {
     // new chat wizard
     @Published var isNewEntityWizardPresented: Bool = false
     @Published var newEntityWizardInitialKind: NewEntityKind? = nil
+    @Published var isSceneCreationWizardPresented: Bool = false
+    @Published var sceneCreationWizardInitialGoal: SceneWizardGoal = .newScene
+    @MainActor
+    func presentSceneCreationWizard(initialGoal: SceneWizardGoal) {
+        sceneCreationWizardInitialGoal = initialGoal
+        isSceneCreationWizardPresented = true
+    }
 
     
     // Shell coordination

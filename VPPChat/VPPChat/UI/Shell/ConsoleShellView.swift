@@ -66,6 +66,8 @@ struct ConsoleShellView: View {
 
 private struct ConsoleSessionSidebar: View {
     @EnvironmentObject private var workspace: WorkspaceViewModel
+    @ObservedObject private var workspaceViewModel: WorkspaceViewModel
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -99,7 +101,7 @@ private struct ConsoleSessionSidebar: View {
         }
         .padding(12)
         .panelBackground()
-        Button { workspace.presentNewEntityWizard() } label: {
+        Button {                 workspaceViewModel.presentSceneCreationWizard(initialGoal: .newScene) } label: {
                Image(systemName: "plus")
                    .font(.system(size: 12, weight: .bold))
                    .padding(10)
