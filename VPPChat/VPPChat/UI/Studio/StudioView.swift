@@ -222,7 +222,7 @@ struct StudioView: View {
             PopoverChrome {
                 Button(action: onNewChat) {
                     HStack {
-                        Image(systemName: "bubble.left.and.text.bubble.fill")
+                        Image(systemName: "message.fill")
                         Text("New Chat")
                         Spacer()
                     }

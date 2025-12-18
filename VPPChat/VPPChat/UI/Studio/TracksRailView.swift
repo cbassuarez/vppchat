@@ -125,6 +125,92 @@ struct TracksRailView: View {
          }
        }
      }
+    private func envChatRow(env: WorkspaceRepository.EnvironmentNode, inboxTrackID: UUID, sc: WorkspaceRepository.SceneNode) -> some View {
+      let sceneModel = vm.store.scene(id: sc.id)
+      let title = sceneModel?.title ?? sc.title
+
+      return HStack(spacing: 8) {
+        rowTitle(kind: .scene, id: sc.id, title: title, selected: (vm.selectedSceneID == sc.id), icon: "bubble.left.and.text.bubble.right")
+        Spacer(minLength: 0)
+        trailingEllipsisMenu(hoverKey: .scene(sc.id), menu: { envChatSceneMenu(env: env, inboxTrackID: inboxTrackID, sc: sc) })
+      }
+      .padding(.vertical, 4)
+      .padding(.horizontal, 8)
+      .background(
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .fill(vm.selectedSceneID == sc.id ? theme.structuralAccent.opacity(0.16) : Color.clear)
+      )
+      .contentShape(Rectangle())
+      .onTapGesture {
+        if let s = sceneModel { vm.select(scene: s) } else { vm.selectedSceneID = sc.id }
+      }
+      .draggable(WorkspaceDragPayload(kind: .scene, id: sc.id))
+      .dropDestination(for: WorkspaceDragPayload.self) { payloads, _ in
+        payloads.contains { payload in
+          guard payload.kind == .scene, payload.id != sc.id else { return false }
+          vm.uiMoveOrReorderScene(payload.id, toTrackID: inboxTrackID, beforeSceneID: sc.id)
+          return true
+        }
+      }
+    }
+
+    private func envChatSceneMenu(env: WorkspaceRepository.EnvironmentNode, inboxTrackID: UUID, sc: WorkspaceRepository.SceneNode) -> some View {
+      Group {
+        Button("Rename") { beginRename(kind: .scene, id: sc.id, current: sc.title) }
+
+        Menu("Move…") {
+          ForEach(vm.libraryTree) { targetEnv in
+            // env-level destination:
+            if let targetInbox = targetEnv.inboxTrackID {
+              Button("\(targetEnv.name) — Chats") {
+                vm.uiMoveOrReorderScene(sc.id, toTrackID: targetInbox, beforeSceneID: nil)
+              }
+            }
+            // regular project/topic destinations (existing)
+            Menu(targetEnv.name) {
+              ForEach(targetEnv.projects) { targetProj in
+                Menu(targetProj.name) {
+                  ForEach(targetProj.tracks) { targetTrack in
+                    Button(targetTrack.name) {
+                      vm.uiMoveOrReorderScene(sc.id, toTrackID: targetTrack.id, beforeSceneID: nil)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        Divider()
+        Button("Move to Trash") { vm.uiTrashScene(sc.id, title: sc.title) }
+      }
+    }
+
+    private func envChatsSection(env: WorkspaceRepository.EnvironmentNode, inboxTrackID: UUID) -> some View {
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 8) {
+          Image(systemName: "message")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(StudioTheme.Colors.textSecondary)
+          Text("General Chats")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(StudioTheme.Colors.textSecondary)
+          Spacer()
+          Button {
+            vm.uiCreateEnvChat(environmentID: env.id)   // add in VM (below)
+          } label: {
+            Image(systemName: "plus")
+              .font(.system(size: 11, weight: .bold))
+          }
+          .buttonStyle(.plain)
+        }
+
+        ForEach(env.envChats) { sc in
+          envChatRow(env: env, inboxTrackID: inboxTrackID, sc: sc)
+        }
+      }
+      .padding(.leading, 12)
+    }
 
     private func envPartition(_ env: WorkspaceRepository.EnvironmentNode, height: CGFloat) -> some View {
        VStack(alignment: .leading, spacing: 8) {
@@ -142,7 +228,11 @@ struct TracksRailView: View {
          )
     
          Divider().opacity(0.35)
-    
+           if let inboxTrackID = env.inboxTrackID {
+             envChatsSection(env: env, inboxTrackID: inboxTrackID)
+             Divider().opacity(0.35)
+           }
+
          VStack(alignment: .leading, spacing: 8) {
            ForEach(env.projects) { proj in
              projectSection(env: env, proj: proj)
@@ -163,12 +253,21 @@ struct TracksRailView: View {
        )
        // Drop project onto env to MOVE (append)
        .dropDestination(for: WorkspaceDragPayload.self) { payloads, _ in
-         payloads.contains { payload in
+         let movedProject = payloads.contains { payload in
            guard payload.kind == .project else { return false }
            vm.uiMoveOrReorderProject(payload.id, toEnvironmentID: env.id, beforeProjectID: nil)
            return true
          }
+
+         let movedSceneToEnv = payloads.contains { payload in
+           guard payload.kind == .scene, let inbox = env.inboxTrackID else { return false }
+           vm.uiMoveOrReorderScene(payload.id, toTrackID: inbox, beforeSceneID: nil)
+           return true
+         }
+
+         return movedProject || movedSceneToEnv
        }
+
      }
 
 
@@ -226,7 +325,7 @@ struct TracksRailView: View {
         } label: {
             let trackModel = vm.store.track(id: tr.id)
             treeRow(
-                icon: "rectangle.3.offgrid.fill",
+                icon: "quote.bubble.fill",
                 title: trackModel?.name ?? tr.name,
                 selected: (vm.selectedTrackID == tr.id),
                 hoverKey: .track(tr.id),
@@ -326,7 +425,7 @@ struct TracksRailView: View {
                 id: sc.id,
                 title: title,
                 selected: (vm.selectedSceneID == sc.id),
-                icon: "square.stack.3d.down.right.fill"
+                icon: "bubble.left.and.text.bubble.right"
             )
 
             Spacer(minLength: 0)
@@ -470,7 +569,16 @@ struct TracksRailView: View {
         Group {
             Button("Rename") { beginRename(kind: .environment, id: env.id, current: env.name) }
             Divider()
-            Button("New Project…") { vm.uiCreateProject(in: env.id) }
+            Button("New Project…") {
+        print("🟣 TracksRail envMenu: New Project pressed")
+                vm.presentSceneCreationWizard(
+                   initialGoal: .newScene,
+                   startStep: .project,
+                   existingEnvironmentID: env.id,
+                   prefillEnvironmentName: env.name,
+                   skipPlacement: true
+                 )
+            }
             Divider()
             Button("Move to Trash") { vm.uiTrashEnvironment(env.id, title: env.name) }
         }
@@ -487,7 +595,18 @@ struct TracksRailView: View {
                 }
             }
             Divider()
-            Button(WorkspaceLexicon.newTopicEllipsis) { vm.uiCreateTrack(in: proj.id) }
+            Button(WorkspaceLexicon.newTopicEllipsis) {
+        print("🟣 TracksRail projectMenu: New Topic pressed")
+                vm.presentSceneCreationWizard(
+                   initialGoal: .newScene,
+                   startStep: .track,
+                   existingEnvironmentID: env.id,
+                   existingProjectID: proj.id,
+                   prefillEnvironmentName: env.name,
+                   prefillProjectName: proj.name,
+                   skipPlacement: true
+                 )
+ }
             Divider()
             Button("Move to Trash") { vm.uiTrashProject(proj.id, title: proj.name) }
         }
@@ -508,7 +627,7 @@ struct TracksRailView: View {
                 }
             }
             Divider()
-            Button(WorkspaceLexicon.newChatEllipsis) { vm.presentNewChatEnvironmentFlow() }
+            Button(WorkspaceLexicon.newChatEllipsis) { vm.uiCreateChat(in: tr.id) }
             Divider()
             Button("Move to Trash") { vm.uiTrashTrack(tr.id, title: tr.name) }
         }
@@ -619,8 +738,8 @@ struct TracksRailView: View {
       switch kind {
       case .environment: return "folder"
       case .project: return "folder.fill"
-      case .track: return "rectangle.3.offgrid"
-      case .scene: return "square.stack.3d.down.right"
+      case .track: return "quote.bubble.fill"
+      case .scene: return "bubble.left.and.text.bubble.right"
       case .block: return "doc.text"
       }
     }

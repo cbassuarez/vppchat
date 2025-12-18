@@ -36,7 +36,7 @@ struct SceneCanvasView: View {
 
     private var vppRail: some View {
         HStack(spacing: 4) {
-            Text("VPP Rail")
+            Text("Studio")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(StudioTheme.Colors.textSubtle)
             Spacer()

@@ -18,19 +18,62 @@ struct EnvironmentProjectTrackWizardForm: View {
     let headerSubtitle: String
     let skipTitle: String
     let onSkip: () -> Void
+   
     let onFinish: (_ environmentName: String, _ projectName: String, _ trackName: String) async throws -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private enum Step: Int, CaseIterable { case environment = 0, project = 1, track = 2 }
+    enum Step: Int, CaseIterable { case environment = 0, project = 1, track = 2 }
+        private let initialStep: Step
+        private let prefillEnvironmentName: String?
+        private let prefillProjectName: String?
+        private let prefillTrackName: String?
+        private let skipPlacement: Bool
+        @State private var step: Step
+        @State private var envName: String
+        @State private var projectName: String
+        @State private var trackName: String
 
-    @State private var step: Step = .environment
-    @State private var envName: String = "Personal"
-    @State private var projectName: String = "Getting Started"
-    @State private var trackName: String = "Read Me First"
+    @State private var didSeedFromPrefill: Bool = false
     @State private var isWorking: Bool = false
     @State private var errorText: String?
-
+    init(
+            headerTitle: String,
+            headerSubtitle: String,
+            skipTitle: String,
+            onSkip: @escaping () -> Void,
+            initialStep: Step = .environment,
+            prefillEnvironmentName: String? = nil,
+            prefillProjectName: String? = nil,
+            prefillTrackName: String? = nil,
+            skipPlacement: Bool = false,
+            onFinish: @escaping (_ environmentName: String, _ projectName: String, _ trackName: String) async throws -> Void
+        ) {
+            // If placement is already known (i.e., caller is routing from an existing parent),
+                       // automatically jump past earlier steps implied by the prefills.
+                       let resolvedInitialStep: Step = {
+                           guard skipPlacement else { return initialStep }
+                           if prefillProjectName != nil || prefillTrackName != nil { return .track }
+                           if prefillEnvironmentName != nil { return .project }
+                           return initialStep
+                       }()
+            self.headerTitle = headerTitle
+            self.headerSubtitle = headerSubtitle
+            self.skipTitle = skipTitle
+            self.onSkip = onSkip
+            self.onFinish = onFinish
+            self.initialStep = resolvedInitialStep
+            self.prefillEnvironmentName = prefillEnvironmentName
+            self.prefillProjectName = prefillProjectName
+            self.prefillTrackName = prefillTrackName
+            self.skipPlacement = skipPlacement
+    
+            _step = State(initialValue: resolvedInitialStep)
+            _envName = State(initialValue: prefillEnvironmentName ?? "Personal")
+            _projectName = State(initialValue: prefillProjectName ?? "Getting Started")
+            _trackName = State(initialValue: prefillTrackName ?? "Read Me First")
+        }
+    
     private var popAnimation: Animation {
         reduceMotion
         ? .easeOut(duration: 0.01)
@@ -70,7 +113,7 @@ struct EnvironmentProjectTrackWizardForm: View {
         switch step {
         case .environment: return "Step 1 — Environment"
         case .project:     return "Step 2 — Project"
-        case .track:       return "Step 3 — Track"
+        case .track:       return "Step 3 — Topic"
         }
     }
 
@@ -156,6 +199,15 @@ struct EnvironmentProjectTrackWizardForm: View {
         }
         .frame(width: 520)
         .background(AppTheme.Colors.surface0)
+        .onAppear {
+                    guard !didSeedFromPrefill else { return }
+                    didSeedFromPrefill = true
+                    if let s = prefillEnvironmentName { envName = s }
+                    if let s = prefillProjectName { projectName = s }
+                    if let s = prefillTrackName { trackName = s }
+                    if skipPlacement { step = initialStep }
+                }
+
     }
 
     private var header: some View {
@@ -181,7 +233,7 @@ struct EnvironmentProjectTrackWizardForm: View {
             Spacer()
 
             Button("Back") { step = Step(rawValue: max(0, step.rawValue - 1))! }
-                .disabled(step == .environment || isWorking)
+                .disabled(isWorking || step == .environment || (skipPlacement && step == initialStep))
 
             Button(step == .track ? "Finish" : "Continue") {
                 if step == .track { finish() }

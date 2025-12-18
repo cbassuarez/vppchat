@@ -265,6 +265,66 @@ extension WorkspaceDB {
             VALUES ('\(SeedIDs.welcomeBlock)', '\(SeedIDs.sceneChat)', 'conversation', 'Welcome', NULL, 1, NULL, \(now), \(now), NULL, NULL);
             """)
         }
+        
+        migrator.registerMigration("v2_system_roles") { db in
+          // 1) columns
+          try db.execute(sql: "ALTER TABLE projects ADD COLUMN isSystem INTEGER NOT NULL DEFAULT 0;")
+          try db.execute(sql: "ALTER TABLE projects ADD COLUMN systemRole TEXT NULL;")
+          try db.execute(sql: "ALTER TABLE tracks   ADD COLUMN isSystem INTEGER NOT NULL DEFAULT 0;")
+          try db.execute(sql: "ALTER TABLE tracks   ADD COLUMN systemRole TEXT NULL;")
+
+          // 2) indexes
+          try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_systemRole ON projects(systemRole);")
+          try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tracks_systemRole   ON tracks(systemRole);")
+
+          // 3) backfill: ensure env inbox project+track exists for each non-deleted env
+          let envIDs = try String.fetchAll(db, sql: "SELECT id FROM environments WHERE deletedAt IS NULL;")
+          let now = Date().timeIntervalSince1970
+
+          for envID in envIDs {
+            let existingInboxProject: String? = try String.fetchOne(db, sql: """
+              SELECT id FROM projects
+              WHERE environmentID=? AND deletedAt IS NULL AND isSystem=1 AND systemRole='env_inbox_project'
+              LIMIT 1;
+            """, arguments: [envID])
+
+            let inboxProjectID = existingInboxProject ?? UUID().uuidString
+            if existingInboxProject == nil {
+              let sortIndex = (try Int.fetchOne(db, sql: """
+                SELECT COALESCE(MAX(sortIndex), -1) + 1 FROM projects
+                WHERE environmentID=? AND deletedAt IS NULL;
+              """, arguments: [envID])) ?? 0
+
+              try db.execute(sql: """
+                INSERT INTO projects
+                (id, environmentID, name, sortIndex, createdAt, updatedAt, deletedAt, deletedRootID, isSystem, systemRole)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 1, 'env_inbox_project');
+              """, arguments: [inboxProjectID, envID, "Inbox", sortIndex, now, now])
+            }
+
+            let existingInboxTrack: String? = try String.fetchOne(db, sql: """
+              SELECT t.id FROM tracks t
+              JOIN projects p ON p.id = t.projectID
+              WHERE p.environmentID=? AND t.deletedAt IS NULL AND p.deletedAt IS NULL
+                AND t.isSystem=1 AND t.systemRole='env_inbox_track'
+              LIMIT 1;
+            """, arguments: [envID])
+
+            if existingInboxTrack == nil {
+              let trackID = UUID().uuidString
+              let sortIndex = (try Int.fetchOne(db, sql: """
+                SELECT COALESCE(MAX(sortIndex), -1) + 1 FROM tracks
+                WHERE projectID=? AND deletedAt IS NULL;
+              """, arguments: [inboxProjectID])) ?? 0
+
+              try db.execute(sql: """
+                INSERT INTO tracks
+                (id, projectID, name, sortIndex, lastOpenedSceneID, createdAt, updatedAt, deletedAt, deletedRootID, isSystem, systemRole)
+                VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, NULL, 1, 'env_inbox_track');
+              """, arguments: [trackID, inboxProjectID, "Chats", sortIndex, now, now])
+            }
+          }
+        }
 
         return migrator
     }()

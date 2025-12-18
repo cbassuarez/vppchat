@@ -13,6 +13,12 @@ struct FirstRunOnboardingWizard: View {
                 workspaceVM.skipFirstRunOnboarding()
                 dismiss()
             },
+            initialStep: .environment,
+                      prefillEnvironmentName: nil,
+                       prefillProjectName: nil,
+                       prefillTrackName: nil,
+                       skipPlacement: false,
+
             onFinish: { env, project, track in
                 await workspaceVM.completeFirstRunOnboarding(
                     environmentName: env,

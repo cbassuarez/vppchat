@@ -101,8 +101,9 @@ struct WorkspaceLibrarySidebar: View {
         ) {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(env.projects) { p in
-                    projectRow(p)
-                }
+                   projectRow(env: env, p)
+                 }
+
             }
             .padding(.leading, 12)
         } label: {
@@ -113,12 +114,25 @@ struct WorkspaceLibrarySidebar: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(AppTheme.Colors.textPrimary)
             .contentShape(Rectangle())
-            .contextMenu {
-                Button("New Project…") { vm.uiCreateProject(in: env.id) }
-                Button("Rename…") { renameRequest = .init(kind: .environment, entityID: env.id, currentName: env.name) }
-                Divider()
-                Button("Move to Trash…") { vm.uiTrashEnvironment(env.id, title: env.name) }
-            }
+            .contextMenu(menuItems: {
+                        Button("New Project…", action: {
+                          print("🟣 New Project context menu fired")
+                          vm.presentSceneCreationWizard(
+                            initialGoal: .newScene,
+                            startStep: .project,
+                            existingEnvironmentID: env.id,
+                            prefillEnvironmentName: env.name,
+                            skipPlacement: true
+                          )
+                        })
+                        Button("Rename…", action: {
+                          renameRequest = .init(kind: .environment, entityID: env.id, currentName: env.name)
+                        })
+                        Divider()
+                        Button("Move to Trash…", action: {
+                          vm.uiTrashEnvironment(env.id, title: env.name)
+                        })
+                      })
             .dropDestination(for: WorkspaceDragPayload.self) { payloads, _ in
                 // project -> environment only
                 let moved = payloads.contains { payload in
@@ -131,7 +145,7 @@ struct WorkspaceLibrarySidebar: View {
         }
     }
 
-    private func projectRow(_ p: WorkspaceRepository.ProjectNode) -> some View {
+    private func projectRow(env: WorkspaceRepository.EnvironmentNode, _ p: WorkspaceRepository.ProjectNode) -> some View {
         DisclosureGroup(
             isExpanded: Binding(
                 get: { expandedProjects.contains(p.id) },
@@ -155,12 +169,23 @@ struct WorkspaceLibrarySidebar: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(AppTheme.Colors.textPrimary)
             .contentShape(Rectangle())
-            .contextMenu {
-                Button(WorkspaceLexicon.newTopicEllipsis) { vm.uiCreateTrack(in: p.id) }
+            .contextMenu (menuItems: {
+                //new topic button
+                Button(WorkspaceLexicon.newTopicEllipsis) {
+                    vm.presentSceneCreationWizard(
+                       initialGoal: .newScene,
+                       startStep: .track,
+                       existingEnvironmentID: env.id,
+                       existingProjectID: p.id,
+                       prefillEnvironmentName: env.name,
+                       prefillProjectName: p.name,
+                       skipPlacement: true
+                     )
+                }
                 Button("Rename…") { renameRequest = .init(kind: .project, entityID: p.id, currentName: p.name) }
                 Divider()
                 Button("Move to Trash…") { vm.uiTrashProject(p.id, title: p.name) }
-            }
+            })
             .draggable(WorkspaceDragPayload(kind: .project, id: p.id))
             .dropDestination(for: WorkspaceDragPayload.self) { payloads, _ in
                 // topic -> project only
@@ -192,18 +217,18 @@ struct WorkspaceLibrarySidebar: View {
             .padding(.leading, 12)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "rectangle.3.offgrid.fill")
+                Image(systemName: "quote.bubble.fill")
                 Text(t.name)
             }
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(AppTheme.Colors.textPrimary)
             .contentShape(Rectangle())
-            .contextMenu {
-                Button(WorkspaceLexicon.newChatEllipsis) { vm.presentNewChatEnvironmentFlow() }
+            .contextMenu(menuItems: {
+                Button(WorkspaceLexicon.newChatEllipsis) { vm.uiCreateChat(in: t.id) }
                 Button("Rename…") { renameRequest = .init(kind: .track, entityID: t.id, currentName: t.name) }
                 Divider()
                 Button("Move to Trash…") { vm.uiTrashTrack(t.id, title: t.name) }
-            }
+            })
             .draggable(WorkspaceDragPayload(kind: .track, id: t.id))
             .dropDestination(for: WorkspaceDragPayload.self) { payloads, _ in
                 // chat -> topic only
@@ -238,7 +263,7 @@ struct WorkspaceLibrarySidebar: View {
                 vm.uiSelectScene(s.id)
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "square.stack.3d.down.right.fill")
+                    Image(systemName: "bubble.left.and.text.bubble.right")
                     Text(s.title)
                 }
             }
@@ -246,11 +271,11 @@ struct WorkspaceLibrarySidebar: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(vm.selectedSceneID == s.id ? AppTheme.Colors.structuralAccent : AppTheme.Colors.textPrimary)
             .contentShape(Rectangle())
-            .contextMenu {
+            .contextMenu(menuItems: {
                 Button("Rename…") { renameRequest = .init(kind: .scene, entityID: s.id, currentName: s.title) }
                 Divider()
                 Button("Move to Trash…") { vm.uiTrashScene(s.id, title: s.title) }
-            }
+            })
             .draggable(WorkspaceDragPayload(kind: .scene, id: s.id))
         }
     }
@@ -264,7 +289,7 @@ struct WorkspaceLibrarySidebar: View {
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: b.kind == "conversation" ? "bubble.left.and.text.bubble.fill" : "doc.text.fill")
+                Image(systemName: b.kind == "conversation" ? "message.fill" : "doc.text.fill")
                 Text(b.title)
                 if b.isCanonical {
                     Spacer(minLength: 0)
@@ -278,11 +303,11 @@ struct WorkspaceLibrarySidebar: View {
         .font(.system(size: 11, weight: .medium))
         .foregroundStyle(vm.selectedBlockID == b.id ? AppTheme.Colors.structuralAccent : AppTheme.Colors.textSecondary)
         .contentShape(Rectangle())
-        .contextMenu {
+        .contextMenu(menuItems: {
             if b.kind == "conversation" || b.kind == "document" {
                 Button("Move to Trash…") { vm.uiTrashBlock(b.id, title: b.title) }
             }
-        }
+        })
     }
     
     func trashRow(_ item: WorkspaceRepository.TrashRoot) -> some View {
@@ -311,21 +336,22 @@ struct WorkspaceLibrarySidebar: View {
         }
       }
       .contentShape(Rectangle())
-      .contextMenu {
-        Button("Restore…") {
-          restoreRequest = .init(kind: kind(item.kind), entityID: item.id, title: item.title)
-        }
-        Divider()
-        Button("Empty Trash…") { vm.uiEmptyTrash() }
-      }
+          .contextMenu(menuItems: {
+                 Button("Restore…", action: {
+                   restoreRequest = .init(kind: kind(item.kind), entityID: item.id, title: item.title)
+                 })
+                 Divider()
+                 Button("Empty Trash…", action: { vm.uiEmptyTrash() })
+               })
+
     }
 
     private func trashIcon(for kind: WorkspaceRepository.TrashKind) -> String {
       switch kind {
       case .environment: return "folder"
       case .project: return "folder.fill"
-      case .track: return "rectangle.3.offgrid"
-      case .scene: return "square.stack.3d.down.right"
+      case .track: return "quote.bubble.fill"
+      case .scene: return "bubble.left.and.text.bubble.right"
       case .block: return "doc.text"
       }
     }
@@ -366,9 +392,9 @@ struct WorkspaceLibrarySidebar: View {
             isTrashExpanded.toggle()
           }
         }
-        .contextMenu {
+        .contextMenu(menuItems: {
           Button("Empty Trash…") { vm.uiEmptyTrash() }
-        }
+        })
 
         if isTrashExpanded {
           ScrollView {

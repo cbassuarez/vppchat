@@ -42,8 +42,8 @@ enum NewEntityKind: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .environment: return "globe"
         case .project: return "folder.fill"
-        case .track: return "rectangle.3.offgrid.bubble.left.fill"
-        case .scene: return "square.stack.3d.down.right.fill"
+        case .track: return "quote.bubble.fill"
+        case .scene: return "bubble.left.and.text.bubble.right"
         }
     }
 }
@@ -575,6 +575,7 @@ struct NewEntityWizard: View {
                     trackID: trackID,
                     name: trimmed
                 )
+                vm.clearNewEntityWizardContext()
                 // optional: keep selection in sync (vm does this), close
                 _ = createdID
                 dismiss()
@@ -588,6 +589,25 @@ struct NewEntityWizard: View {
 
     private func seedDefaultsFromViewModel() {
         kind = vm.newEntityWizardInitialKind ?? .project
+        // Prefill IDs from context-menu entry points
+        if let env = vm.newEntityWizardPrefillEnvID { envID = env }
+        if let proj = vm.newEntityWizardPrefillProjectID { projectID = proj }
+        if let tr = vm.newEntityWizardPrefillTrackID { trackID = tr }
+        
+        // If the caller already chose the kind, skip the kind step
+        if vm.newEntityWizardSkipKindStep || vm.newEntityWizardInitialKind != nil {
+            switch kind {
+            case .environment:
+                step = .name
+            case .project:
+                step = (envID == nil) ? .placement : .name
+            case .track:
+                step = (projectID == nil) ? .placement : .name
+            case .scene:
+                step = (trackID == nil) ? .placement : .name
+            }
+        }
+
         seedPlacementDefaults()
         seedNameDefault()
     }

@@ -11,10 +11,16 @@ struct Project: Identifiable, Hashable {
     var name: String
     var tracks: [Track.ID]
     var lastOpenedTrackID: Track.ID?
+    var isSystem: Bool
+    var systemRole: String?
+    
 
-    init(id: UUID = UUID(), name: String, tracks: [Track.ID] = [], lastOpenedTrackID: Track.ID? = nil) {
+    init(id: UUID = UUID(), name: String, isSystem: Bool = false, systemRole: String? = nil, tracks: [Track.ID] = [], lastOpenedTrackID: Track.ID? = nil) {
         self.id = id
         self.name = name
+        self.isSystem = isSystem
+        self.systemRole = systemRole
+
         self.tracks = tracks
         self.lastOpenedTrackID = lastOpenedTrackID
     }
@@ -24,13 +30,18 @@ struct Track: Identifiable, Hashable {
     let id: UUID
     var projectID: Project.ID
     var name: String
+    var isSystem: Bool
+    var systemRole: String?
     var scenes: [Scene.ID]
     var lastOpenedSceneID: Scene.ID?
 
-    init(id: UUID = UUID(), projectID: Project.ID, name: String, scenes: [Scene.ID] = [], lastOpenedSceneID: Scene.ID? = nil) {
+    init(id: UUID = UUID(), projectID: Project.ID, name: String, isSystem: Bool = false, systemRole: String? = nil, scenes: [Scene.ID] = [], lastOpenedSceneID: Scene.ID? = nil) {
         self.id = id
         self.projectID = projectID
         self.name = name
+        self.isSystem = isSystem
+        self.systemRole = systemRole
+
         self.scenes = scenes
         self.lastOpenedSceneID = lastOpenedSceneID
     }
@@ -39,6 +50,7 @@ struct Track: Identifiable, Hashable {
 struct Scene: Identifiable, Hashable {
     let id: UUID
     var trackID: Track.ID
+    var environmentID: UUID?
     var title: String
     var summary: String?
     var createdAt: Date

@@ -42,6 +42,12 @@ struct RootWindowView: View {
         SceneCreationWizard(
             api: WorkspaceSceneWizardAdapter(vm: workspaceVM),
             initialGoal: workspaceVM.sceneCreationWizardInitialGoal,
+            startStep: workspaceVM.sceneCreationWizardStartStep,
+            existingEnvironmentID: workspaceVM.sceneCreationWizardExistingEnvironmentID,
+            existingProjectID: workspaceVM.sceneCreationWizardExistingProjectID,
+            prefillEnvironmentName: workspaceVM.sceneCreationWizardPrefillEnvironmentName,
+            prefillProjectName: workspaceVM.sceneCreationWizardPrefillProjectName,
+            skipPlacement: workspaceVM.sceneCreationWizardSkipPlacement,
             onDismiss: { workspaceVM.isSceneCreationWizardPresented = false }
         )
     }

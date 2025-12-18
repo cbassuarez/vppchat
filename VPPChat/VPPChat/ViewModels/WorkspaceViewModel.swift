@@ -22,16 +22,48 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var consoleContextStrategy: LLMContextStrategy =
         LLMContextStrategy.allCases.first!
     
+    @Published var newEntityWizardPrefillEnvID: UUID? = nil
+    @Published var newEntityWizardPrefillProjectID: UUID? = nil
+    @Published var newEntityWizardPrefillTrackID: UUID? = nil
+    @Published var newEntityWizardSkipKindStep: Bool = false
+
+    
     // new chat wizard
     @Published var isNewEntityWizardPresented: Bool = false
     @Published var newEntityWizardInitialKind: NewEntityKind? = nil
     @Published var isSceneCreationWizardPresented: Bool = false
     @Published var sceneCreationWizardInitialGoal: SceneWizardGoal = .newScene
     @Published var isSceneWizardOnboarding: Bool = false
+    
+    //prevent duplicate env/project creation in SceneCreationWizard.onFinish
+    @Published var sceneCreationWizardStartStep: SceneCreationWizardStartStep = .environment
+    @Published var sceneCreationWizardExistingEnvironmentID: UUID? = nil
+     @Published var sceneCreationWizardExistingProjectID: UUID? = nil
+     @Published var sceneCreationWizardPrefillEnvironmentName: String? = nil
+     @Published var sceneCreationWizardPrefillProjectName: String? = nil
+     @Published var sceneCreationWizardSkipPlacement: Bool = false
+
     @MainActor
-    func presentSceneCreationWizard(initialGoal: SceneWizardGoal) {
-        isSceneWizardOnboarding = false
+    func presentSceneCreationWizard(
+    initialGoal: SceneWizardGoal,
+      startStep: SceneCreationWizardStartStep = .environment,
+      existingEnvironmentID: UUID? = nil,
+      existingProjectID: UUID? = nil,
+      prefillEnvironmentName: String? = nil,
+      prefillProjectName: String? = nil,
+      skipPlacement: Bool = false
+    ) {
+
+        print("🟢 presentSceneCreationWizard fired initialGoal=\(initialGoal)")
+isSceneWizardOnboarding = false
         sceneCreationWizardInitialGoal = initialGoal
+        sceneCreationWizardStartStep = startStep
+          sceneCreationWizardExistingEnvironmentID = existingEnvironmentID
+          sceneCreationWizardExistingProjectID = existingProjectID
+          sceneCreationWizardPrefillEnvironmentName = prefillEnvironmentName
+          sceneCreationWizardPrefillProjectName = prefillProjectName
+          sceneCreationWizardSkipPlacement = skipPlacement
+
         isSceneCreationWizardPresented = true
     }
     
@@ -350,7 +382,7 @@ final class WorkspaceViewModel: ObservableObject {
       if done == false {
         presentOnboardingWizard()
       } else {
-        presentSceneCreationWizard(initialGoal: .newScene)
+          presentSceneCreationWizard(initialGoal: SceneWizardGoal.newScene)
       }
     }
 
@@ -533,6 +565,22 @@ final class WorkspaceViewModel: ObservableObject {
     @MainActor func uiEmptyTrash() {
         guard let repo else { return }
         do { try repo.emptyTrash(); try store.loadFromRepository(); reloadLibraryTree(); reloadTrash() } catch { print(error) }
+    }
+    func uiCreateEnvChat(environmentID: UUID) {
+        do {
+            let (_, inboxTrackID) = try repo!.ensureInboxContainers(for: environmentID)
+            let sceneID = try repo!.createScene(trackID: inboxTrackID, title: "New Chat")
+
+          reloadLibraryTree()
+          if let s = store.scene(id: sceneID) {
+            select(scene: s)
+          } else {
+            selectedSceneID = sceneID
+          }
+        } catch {
+          print("uiCreateEnvChat failed:", error)
+        }
+
     }
 
     struct RestoreDestination: Identifiable { let id: UUID; let title: String }
@@ -948,7 +996,7 @@ extension WorkspaceViewModel {
                 kind: .session,
                 title: session.title,
                 subtitle: subtitle,
-                iconName: "bubble.left.and.text.bubble.fill",
+                iconName: "message.fill",
                 typeLabel: "MESSAGE",
                 payload: .session(id: session.id)
             )
@@ -976,7 +1024,7 @@ extension WorkspaceViewModel {
                     kind: .track,
                     title: track.name,
                     subtitle: project.name,
-                    iconName: "rectangle.3.offgrid.bubble.left.fill",
+                    iconName: "quote.bubble.fill",
                     typeLabel: "TOPIC",
                     payload: .track(projectID: project.id, trackID: track.id)
                 )
@@ -990,7 +1038,7 @@ extension WorkspaceViewModel {
                         kind: .scene,
                         title: scene.title,
                         subtitle: subtitle,
-                        iconName: "square.stack.3d.down.right.fill",
+                        iconName: "bubble.left.and.text.bubble.right",
                         typeLabel: "CHAT",
                         payload: .scene(projectID: project.id, trackID: track.id, sceneID: scene.id)
                     )
@@ -1827,6 +1875,33 @@ extension WorkspaceViewModel {
             }
         }
     }
+    @MainActor
+    func uiCreateChat(in trackID: UUID, title: String = "New Chat") {
+        guard let repo else { return }
+        do {
+            let sceneID = try repo.createScene(trackID: trackID, title: title)
+            try store.loadFromRepository()
+            reloadLibraryTree()
+    
+            if let scene = store.scene(id: sceneID) {
+                select(scene: scene)
+            } else {
+                selectedSceneID = sceneID
+                selectedBlockID = nil
+            }
+    
+            // Seed a conversation block so the chat is immediately usable.
+            let convoID = UUID()
+            _ = store.ensureConversationBlock(id: convoID, title: title, sceneID: sceneID)
+            selectedBlockID = convoID
+            selectedSessionID = convoID
+            syncConsoleSessionsFromBlocks()
+    
+            goToStudio()
+        } catch {
+            print("uiCreateChat failed:", error)
+        }
+    }
 
     @MainActor
     private func upsertConsoleSessionIndex(for sessionID: ConsoleSession.ID) -> Int {
@@ -1887,9 +1962,30 @@ extension WorkspaceViewModel {
     }
 
     @MainActor
-    func presentNewEntityWizard(initialKind: NewEntityKind? = nil) {
-        newEntityWizardInitialKind = initialKind
+    func presentNewEntityWizard(
+        initialKind: NewEntityKind? = nil,
+        envID: UUID? = nil,
+        projectID: UUID? = nil,
+        trackID: UUID? = nil,
+        skipKindStep: Bool = false
+    ) {
+        
+        print("🟣 presentNewEntityWizard fired initialKind=\(String(describing: initialKind)) envID=\(String(describing: envID)) projectID=\(String(describing: projectID)) trackID=\(String(describing: trackID)) skipKindStep=\(skipKindStep)")
+newEntityWizardInitialKind = initialKind
+        newEntityWizardPrefillEnvID = envID
+        newEntityWizardPrefillProjectID = projectID
+        newEntityWizardPrefillTrackID = trackID
+        newEntityWizardSkipKindStep = skipKindStep
         isNewEntityWizardPresented = true
+    }
+    
+    @MainActor
+    func clearNewEntityWizardContext() {
+        newEntityWizardInitialKind = nil
+        newEntityWizardPrefillEnvID = nil
+        newEntityWizardPrefillProjectID = nil
+        newEntityWizardPrefillTrackID = nil
+        newEntityWizardSkipKindStep = false
     }
 
     @MainActor
