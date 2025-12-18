@@ -59,7 +59,7 @@ struct SaveBlockFromMessageSheet: View {
             }
 
             if let project = resolvedProject {
-                Picker("Track", selection: Binding(
+                Picker("Topic", selection: Binding(
                     get: { (selectedTrack ?? project.tracks.compactMap { id in
                         workspace.store.track(id: id)
                     }.first)?.id },

@@ -38,7 +38,7 @@ final class InMemoryStore: ObservableObject {
         // ✅ DB write-through (no-op if repo not set yet)
             guard let repo else { return }
             do {
-                let blockID = sessionID  // sessions currently map 1:1 to conversation blocks
+                let blockID = sessionID  // sessions currently map 1:1 to conversation messages
                 let sourcesTableJSON = String(data: (try JSONEncoder().encode(message.sourcesTable)), encoding: .utf8) ?? "[]"
                 let issuesJSON = String(data: (try JSONEncoder().encode(message.validationIssues)), encoding: .utf8) ?? "[]"
                 try repo.pool.write { db in

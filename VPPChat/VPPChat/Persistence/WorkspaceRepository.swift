@@ -201,7 +201,7 @@ final class WorkspaceRepository {
                     domain: "WorkspaceRepository",
                     code: 19,
                     userInfo: [NSLocalizedDescriptionKey:
-                      "FK: createScene failed because track \(trackID) is not in `tracks`. Ensure the track is persisted before creating a scene."
+                      "FK: createScene failed because topic \(trackID) is not in `tracks`. Ensure the topic is persisted before creating a scene."
                     ]
                   )
                 }
@@ -271,4 +271,42 @@ final class WorkspaceRepository {
             try database.execute(sql: "UPDATE tracks SET updatedAt=? WHERE id=?;", arguments: [now, trackID.uuidString])
         }
     }
+// MARK: - Reordering (sortIndex)
+    func setProjectOrder(environmentID: UUID, orderedProjectIDs: [UUID]) throws {
+           let now = Date().timeIntervalSince1970
+           try db.pool.write { database in
+
+            for (idx, id) in orderedProjectIDs.enumerated() {
+                try database.execute(
+                    sql: "UPDATE projects SET sortIndex=?, updatedAt=? WHERE id=? AND environmentID=?;",
+                    arguments: [idx, now, id.uuidString, environmentID.uuidString]
+                )
+            }
+        }
+    }
+
+    func setTrackOrder(projectID: UUID, orderedTrackIDs: [UUID]) throws {
+           let now = Date().timeIntervalSince1970
+           try db.pool.write { database in
+            for (idx, id) in orderedTrackIDs.enumerated() {
+                try database.execute(
+                    sql: "UPDATE tracks SET sortIndex=?, updatedAt=? WHERE id=? AND projectID=?;",
+                    arguments: [idx, now, id.uuidString, projectID.uuidString]
+                )
+            }
+        }
+    }
+
+    func setSceneOrder(trackID: UUID, orderedSceneIDs: [UUID]) throws {
+            let now = Date().timeIntervalSince1970
+            try db.pool.write { database in
+            for (idx, id) in orderedSceneIDs.enumerated() {
+                try database.execute(
+                    sql: "UPDATE scenes SET sortIndex=?, updatedAt=? WHERE id=? AND trackID=?;",
+                    arguments: [idx, now, id.uuidString, trackID.uuidString]
+                )
+            }
+        }
+    }
+
 }

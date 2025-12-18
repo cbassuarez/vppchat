@@ -13,6 +13,8 @@ struct WorkspaceLibrarySidebar: View {
 
     @State private var renameRequest: RenameRequest?
     @State private var restoreRequest: RestoreRequest?
+    @State private var isTrashExpanded = false
+    @State private var isTrashHovering = false
 
     @State private var expandedEnvs: Set<UUID> = []
     @State private var expandedProjects: Set<UUID> = []
@@ -24,17 +26,41 @@ struct WorkspaceLibrarySidebar: View {
             workspaceHeader
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    environmentsTree
-                    Divider().opacity(0.6)
-                    trashSection
-                }
-                .padding(.vertical, 6)
+              VStack(alignment: .leading, spacing: 8) {
+                environmentsTree
+              }
+              .padding(.vertical, 6)
             }
+
+            Divider().opacity(0.6)
+            trashSection
         }
+        .overlay(alignment: .top) {
+          if let t = vm.toast {
+            Text(t.message)
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundStyle(AppTheme.Colors.textPrimary)
+              .padding(.horizontal, 12)
+              .padding(.vertical, 8)
+              .background(
+                RoundedRectangle(cornerRadius: 10)
+                  .fill(AppTheme.Colors.surface1.opacity(0.92))
+              )
+              .padding(.top, 8)
+              .transition(.move(edge: .top).combined(with: .opacity))
+          }
+        }
+
         .padding(12)
         .panelBackground()
-        .onAppear { vm.reloadLibraryTree() }
+        .onAppear {
+          vm.reloadLibraryTree()
+          vm.reloadTrash()
+        }
+        .onChange(of: vm.activeWorkspaceID) { _ in
+          vm.reloadLibraryTree()
+          vm.reloadTrash()
+        }
         .sheet(item: $renameRequest) { req in
             RenameSheet(req: req)
                 .environmentObject(vm)
@@ -51,20 +77,9 @@ struct WorkspaceLibrarySidebar: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppTheme.Colors.textPrimary)
             Spacer()
-            Menu {
-                Button("New Environment…") { vm.uiCreateEnvironment() }
-                Divider()
-                Button("Export Workspace…") { vm.uiExportWorkspace() }
-                Button("Import Workspace…") { vm.uiImportWorkspace() }
-                Divider()
-                Button("Empty Trash") { vm.uiEmptyTrash() }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .menuStyle(.borderlessButton)
         }
     }
+
 
     private var environmentsTree: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -92,7 +107,7 @@ struct WorkspaceLibrarySidebar: View {
             .padding(.leading, 12)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "folder.fill")
+            //    Image(systemName: "folder.fill")
                 Text(env.name)
             }
             .font(.system(size: 12, weight: .semibold))
@@ -134,21 +149,21 @@ struct WorkspaceLibrarySidebar: View {
             .padding(.leading, 12)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "square.grid.2x2.fill")
+                Image(systemName: "folder.fill")
                 Text(p.name)
             }
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(AppTheme.Colors.textPrimary)
             .contentShape(Rectangle())
             .contextMenu {
-                Button("New Track…") { vm.uiCreateTrack(in: p.id) }
+                Button(WorkspaceLexicon.newTopicEllipsis) { vm.uiCreateTrack(in: p.id) }
                 Button("Rename…") { renameRequest = .init(kind: .project, entityID: p.id, currentName: p.name) }
                 Divider()
                 Button("Move to Trash…") { vm.uiTrashProject(p.id, title: p.name) }
             }
             .draggable(WorkspaceDragPayload(kind: .project, id: p.id))
             .dropDestination(for: WorkspaceDragPayload.self) { payloads, _ in
-                // track -> project only
+                // topic -> project only
                 let moved = payloads.contains { payload in
                     guard payload.kind == .track else { return false }
                     vm.uiMoveTrack(payload.id, toProject: p.id)
@@ -184,14 +199,14 @@ struct WorkspaceLibrarySidebar: View {
             .foregroundStyle(AppTheme.Colors.textPrimary)
             .contentShape(Rectangle())
             .contextMenu {
-                Button("New Scene…") { vm.uiCreateScene(in: t.id) }
+                Button(WorkspaceLexicon.newChatEllipsis) { vm.presentNewChatEnvironmentFlow() }
                 Button("Rename…") { renameRequest = .init(kind: .track, entityID: t.id, currentName: t.name) }
                 Divider()
                 Button("Move to Trash…") { vm.uiTrashTrack(t.id, title: t.name) }
             }
             .draggable(WorkspaceDragPayload(kind: .track, id: t.id))
             .dropDestination(for: WorkspaceDragPayload.self) { payloads, _ in
-                // scene -> track only
+                // chat -> topic only
                 let moved = payloads.contains { payload in
                     guard payload.kind == .scene else { return false }
                     vm.uiMoveScene(payload.id, toTrack: t.id)
@@ -202,7 +217,7 @@ struct WorkspaceLibrarySidebar: View {
         }
     }
 
-    private func sceneRow(_ s: WorkspaceRepository.SceneNode) -> some View {
+    func sceneRow(_ s: WorkspaceRepository.SceneNode) -> some View {
         DisclosureGroup(
             isExpanded: Binding(
                 get: { expandedScenes.contains(s.id) },
@@ -269,38 +284,106 @@ struct WorkspaceLibrarySidebar: View {
             }
         }
     }
+    
+    func trashRow(_ item: WorkspaceRepository.TrashRoot) -> some View {
+      HStack(spacing: 8) {
+        Image(systemName: trashIcon(for: item.kind))
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+
+        Text(item.title)
+          .font(.system(size: 11, weight: .medium))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+          .lineLimit(1)
+
+        Spacer(minLength: 0)
+
+        if item.childCount > 0 {
+          Text("\(item.childCount)")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(
+              RoundedRectangle(cornerRadius: 8)
+                .fill(AppTheme.Colors.surface1.opacity(0.7))
+            )
+        }
+      }
+      .contentShape(Rectangle())
+      .contextMenu {
+        Button("Restore…") {
+          restoreRequest = .init(kind: kind(item.kind), entityID: item.id, title: item.title)
+        }
+        Divider()
+        Button("Empty Trash…") { vm.uiEmptyTrash() }
+      }
+    }
+
+    private func trashIcon(for kind: WorkspaceRepository.TrashKind) -> String {
+      switch kind {
+      case .environment: return "folder"
+      case .project: return "folder.fill"
+      case .track: return "rectangle.3.offgrid"
+      case .scene: return "square.stack.3d.down.right"
+      case .block: return "doc.text"
+      }
+    }
+    
 
     private var trashSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Trash")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(AppTheme.Colors.textSecondary)
-                Spacer()
-            }
+      VStack(alignment: .leading, spacing: 8) {
+        // Header row (always visible when trash is non-empty)
+        HStack(spacing: 8) {
+          Image(systemName: "trash")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
 
-            ForEach(vm.trashRoots) { item in
-                Button {
-                    restoreRequest = .init(kind: kind(item.kind), entityID: item.id, title: item.title)
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "trash.fill")
-                        Text(item.title)
-                        Spacer()
-                        if item.childCount > 0 {
-                            Text("\(item.childCount)")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(AppTheme.Colors.textSecondary)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(AppTheme.Colors.textSecondary)
-            }
+          Text("Trash")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+
+          Spacer(minLength: 0)
+
+          // Root count badge (keeps it readable without expanding)
+          Text("\(vm.trashRoots.count)")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+              RoundedRectangle(cornerRadius: 8)
+                .fill(AppTheme.Colors.surface1.opacity(0.7))
+            )
+
+          Image(systemName: isTrashExpanded ? "chevron.down" : "chevron.right")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AppTheme.Colors.textSecondary)
         }
-        .onAppear { vm.reloadTrash() }
+        .contentShape(Rectangle())
+        .onTapGesture {
+          withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+            isTrashExpanded.toggle()
+          }
+        }
+        .contextMenu {
+          Button("Empty Trash…") { vm.uiEmptyTrash() }
+        }
+
+        if isTrashExpanded {
+          ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+              ForEach(vm.trashRoots) { item in
+                trashRow(item)
+              }
+            }
+            .padding(.top, 2)
+          }
+          .frame(maxHeight: 220)
+        }
+      }
     }
+
 
     private func kind(_ k: WorkspaceRepository.TrashKind) -> RestoreRequest.Kind {
         switch k {

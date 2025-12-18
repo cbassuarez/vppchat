@@ -4,6 +4,7 @@ import SwiftUI
 import AppKit
 
 final class WorkspaceViewModel: ObservableObject {
+    private let legacyOnboardingKey = "vppchat.onboarding.completed"
     private var autoNameTasks: [String: Task<Void, Never>] = [:]
     private var autoNamedKeys: Set<String> = []
     let instanceID = UUID()
@@ -26,12 +27,14 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var newEntityWizardInitialKind: NewEntityKind? = nil
     @Published var isSceneCreationWizardPresented: Bool = false
     @Published var sceneCreationWizardInitialGoal: SceneWizardGoal = .newScene
+    @Published var isSceneWizardOnboarding: Bool = false
     @MainActor
     func presentSceneCreationWizard(initialGoal: SceneWizardGoal) {
+        isSceneWizardOnboarding = false
         sceneCreationWizardInitialGoal = initialGoal
         isSceneCreationWizardPresented = true
     }
-
+    
     
     // Shell coordination
     @Published var currentShellMode: ShellMode = .atlas
@@ -65,7 +68,12 @@ final class WorkspaceViewModel: ObservableObject {
     @Published private(set) var activeWorkspaceName: String = "Workspace"
     @Published var libraryTree: [WorkspaceRepository.EnvironmentNode] = []
     @Published var trashRoots: [WorkspaceRepository.TrashRoot] = []
-    
+    @Published var toast: WorkspaceToast? = nil
+    struct WorkspaceToast: Identifiable {
+      let id = UUID()
+      let message: String
+    }
+
     private var registry: WorkspaceRegistry?
     private var db: WorkspaceDB?
     private var repo: WorkspaceRepository?
@@ -84,27 +92,66 @@ final class WorkspaceViewModel: ObservableObject {
         }
     
     @Published var isFirstRunOnboardingPresented: Bool = false
+    func presentOnboardingWizard() {
+        isFirstRunOnboardingPresented = true
+    }
 
       private func onboardingKey(_ workspaceID: UUID) -> String {
         "vppchat.onboarding.completed.\(workspaceID.uuidString)"
       }
     
+    @MainActor
+    func showToast(_ message: String) {
+      toast = .init(message: message)
+      Task { @MainActor in
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        if toast?.message == message { toast = nil }
+      }
+    }
+
       @MainActor
       func maybePresentFirstRunOnboarding() {
         // show only once per workspace, and only if we’re basically still in seed-land
-        let done = UserDefaults.standard.bool(forKey: onboardingKey(activeWorkspaceID))
-        guard done == false else { return }
-        guard store.isSeedOnlyWorkspace else { return }
-        isFirstRunOnboardingPresented = true
+          let id = activeWorkspaceID
+
+          // Legacy/global migration: if the old key is set, treat onboarding as done everywhere
+          if UserDefaults.standard.bool(forKey: legacyOnboardingKey) {
+            UserDefaults.standard.set(true, forKey: onboardingKey(id))
+            return
+          }
+
+          let done = UserDefaults.standard.bool(forKey: onboardingKey(id))
+          guard done == false else { return }
+
+          print("✅ presenting onboarding for workspace=\(id)")
+          presentOnboardingWizard()
+
       }
     
-      private func markOnboardingComplete() {
-        UserDefaults.standard.set(true, forKey: onboardingKey(activeWorkspaceID))
+    @MainActor func markOnboardingComplete() {
+        let id = activeWorkspaceID
+        UserDefaults.standard.set(true, forKey: onboardingKey(id))
+        UserDefaults.standard.set(true, forKey: legacyOnboardingKey) // keep AppStorage/legacy in sync
       }
     
-      @MainActor
-      func completeFirstRunOnboarding(environmentName: String, projectName: String, trackName: String) async {
-        guard let repo else { return }
+    @MainActor
+    func skipFirstRunOnboarding() {
+        markOnboardingComplete()
+        isFirstRunOnboardingPresented = false
+        
+        
+        // Land somewhere meaningful (Finish does this; Skip should too)
+        if let scene = store.scene(id: UUID(uuidString: WorkspaceDB.SeedIDs.sceneChat)!) {
+          select(scene: scene)
+        }
+        goToStudio()
+
+    }
+
+    @MainActor
+      func completeFirstRunOnboarding(environmentName: String, projectName: String, trackName: String) async -> Bool {
+        guard let repo else { return false }
+
         do {
           // Rename the seeded spine to “teach the model”
           try repo.renameEnvironment(id: UUID(uuidString: WorkspaceDB.SeedIDs.envMain)!, name: environmentName)
@@ -112,6 +159,9 @@ final class WorkspaceViewModel: ObservableObject {
           try repo.renameTrack(id: UUID(uuidString: WorkspaceDB.SeedIDs.track1)!, name: trackName)
     
           try store.loadFromRepository()
+            reloadLibraryTree()
+            reloadTrash()
+
     
           // Seed the demo “model” content inside Getting Started
           _ = store.ensureGettingStartedModelSeeded()
@@ -124,8 +174,10 @@ final class WorkspaceViewModel: ObservableObject {
     
           markOnboardingComplete()
           isFirstRunOnboardingPresented = false
+            return true
         } catch {
           print("❌ completeFirstRunOnboarding failed:", error)
+            return false
         }
       }
 
@@ -137,15 +189,15 @@ final class WorkspaceViewModel: ObservableObject {
             ?? store.allProjects.first?.tracks.first
             ?? ensureDefaultPathAndReturnTrackID()
 
-        // 2) Create a Scene in that Track (uses your existing helper below)
-        guard let scene = createScene(in: targetTrackID, title: "New Scene") else { return }
+        // 2) Create a chat in that topic (uses your existing helper below)
+        guard let scene = createScene(in: targetTrackID, title: "New Chat") else { return }
         select(scene: scene)
 
         // 3) Create a Conversation block in that Scene
         let block = Block(
             sceneID: scene.id,
             kind: .conversation,
-            title: "Chat",
+            title: "New Chat",
             subtitle: nil,
             messages: [],
             documentText: nil,
@@ -241,16 +293,20 @@ final class WorkspaceViewModel: ObservableObject {
     }
 // MARK: - Persistence bootstrap
     private func bootstrapPersistence() {
+      Task { @MainActor [weak self] in
+        guard let self else { return }
         do {
-            var reg = try WorkspaceRegistry.loadOrCreate()
-            registry = reg
-            let active = try reg.activeWorkspaceID()
-                ?? reg.entries.first(where: { $0.deletedAt == nil })?.id
-                ?? (try reg.createWorkspace(name: "Default").id)
-            try openWorkspace(active, registry: &reg)
+          var reg = try WorkspaceRegistry.loadOrCreate()
+          self.registry = reg
+          let active = try reg.activeWorkspaceID()
+            ?? reg.entries.first(where: { $0.deletedAt == nil })?.id
+            ?? (try reg.createWorkspace(name: "Environments").id)
+
+          try self.openWorkspace(active, registry: &reg)
         } catch {
-            print("❌ Workspace bootstrap failed: \(error)")
+          print("❌ Workspace bootstrap failed: \(error)")
         }
+      }
     }
 
     @MainActor
@@ -269,15 +325,41 @@ final class WorkspaceViewModel: ObservableObject {
         db = try WorkspaceDB(workspaceID: id, sqliteURL: sqliteURL)
         repo = WorkspaceRepository(db: db!)
         store.setRepository(repo)                 // ✅ new helper on store
+        try store.loadFromRepository()
         syncConsoleSessionsFromBlocks()
         reloadLibraryTree()
         reloadTrash()
         
-        // Defer one runloop so the root view is ready to present a sheet
-          DispatchQueue.main.async { [weak self] in
-            self?.maybePresentFirstRunOnboarding()
-          }
+        Task { @MainActor [weak self] in
+          // give SwiftUI one beat to attach sheet presenters
+          try? await Task.sleep(nanoseconds: 50_000_000)
+          self?.maybePresentFirstRunOnboarding()
+        }
 
+    }
+    @MainActor
+    func presentNewChatEnvironmentFlow() {
+      let id = activeWorkspaceID
+
+      // Treat legacy key as global completion
+      if UserDefaults.standard.bool(forKey: legacyOnboardingKey) {
+        UserDefaults.standard.set(true, forKey: onboardingKey(id))
+      }
+
+      let done = UserDefaults.standard.bool(forKey: onboardingKey(id))
+      if done == false {
+        presentOnboardingWizard()
+      } else {
+        presentSceneCreationWizard(initialGoal: .newScene)
+      }
+    }
+
+    @MainActor
+    func resetOnboardingForCurrentWorkspace() {
+      let id = activeWorkspaceID
+      UserDefaults.standard.removeObject(forKey: onboardingKey(id))
+      UserDefaults.standard.removeObject(forKey: legacyOnboardingKey)
+      isFirstRunOnboardingPresented = false
     }
 
     @MainActor
@@ -293,6 +375,91 @@ final class WorkspaceViewModel: ObservableObject {
         do { trashRoots = try repo.fetchTrashRoots() }
         catch { print("❌ fetchTrashRoots failed: \(error)") }
     }
+    
+// MARK: - Move + reorder (used by canonical sidebar)
+    @MainActor
+    func uiMoveOrReorderProject(_ projectID: UUID, toEnvironmentID envID: UUID, beforeProjectID: UUID?) {
+        guard let repo else { return }
+        do {
+            try repo.moveProject(projectID: projectID, toEnvironmentID: envID)
+            try store.loadFromRepository()
+            reloadLibraryTree()
+
+            guard let env = libraryTree.first(where: { $0.id == envID }) else { return }
+            var ids = env.projects.map(\.id).filter { $0 != projectID }
+            if let before = beforeProjectID, let i = ids.firstIndex(of: before) {
+                ids.insert(projectID, at: i)
+            } else {
+                ids.append(projectID)
+            }
+
+            try repo.setProjectOrder(environmentID: envID, orderedProjectIDs: ids)
+            try store.loadFromRepository()
+            reloadLibraryTree()
+        } catch {
+            print(error)
+        }
+    }
+
+    @MainActor
+    func uiMoveOrReorderTrack(_ trackID: UUID, toProjectID projID: UUID, beforeTrackID: UUID?) {
+        guard let repo else { return }
+        do {
+            try repo.moveTrack(trackID: trackID, toProjectID: projID)
+            try store.loadFromRepository()
+            reloadLibraryTree()
+
+            // Find the target project in the refreshed tree
+            let targetProj: WorkspaceRepository.ProjectNode? = libraryTree
+                .flatMap(\.projects)
+                .first(where: { $0.id == projID })
+            guard let p = targetProj else { return }
+
+            var ids = p.tracks.map(\.id).filter { $0 != trackID }
+            if let before = beforeTrackID, let i = ids.firstIndex(of: before) {
+                ids.insert(trackID, at: i)
+            } else {
+                ids.append(trackID)
+            }
+
+            try repo.setTrackOrder(projectID: projID, orderedTrackIDs: ids)
+            try store.loadFromRepository()
+            reloadLibraryTree()
+        } catch {
+            print(error)
+        }
+    }
+
+    @MainActor
+    func uiMoveOrReorderScene(_ sceneID: UUID, toTrackID trackID: UUID, beforeSceneID: UUID?) {
+        guard let repo else { return }
+        do {
+            try repo.moveScene(sceneID: sceneID, toTrackID: trackID)
+            try store.loadFromRepository()
+            reloadLibraryTree()
+
+            // Find the target topic in the refreshed tree
+            let targetTrack: WorkspaceRepository.TrackNode? = libraryTree
+                .flatMap(\.projects)
+                .flatMap(\.tracks)
+                .first(where: { $0.id == trackID })
+            guard let t = targetTrack else { return }
+
+            var ids = t.scenes.map(\.id).filter { $0 != sceneID }
+            if let before = beforeSceneID, let i = ids.firstIndex(of: before) {
+                ids.insert(sceneID, at: i)
+            } else {
+                ids.append(sceneID)
+            }
+
+            try repo.setSceneOrder(trackID: trackID, orderedSceneIDs: ids)
+            try store.loadFromRepository()
+            reloadLibraryTree()
+        } catch {
+            print(error)
+        }
+    }
+
 
     // MARK: - UI Actions (sidebar)
     @MainActor func uiCreateEnvironment() { uiPromptName(defaultName: "Environment") { [self] name in
@@ -305,12 +472,12 @@ final class WorkspaceViewModel: ObservableObject {
         do { _ = try repo.createProject(environmentID: envID, name: name); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
     }}
 
-    @MainActor func uiCreateTrack(in projectID: UUID) { uiPromptName(defaultName: "Track") { [self] name in
+    @MainActor func uiCreateTrack(in projectID: UUID) { uiPromptName(defaultName: "Topic") { [self] name in
         guard let repo else { return }
         do { _ = try repo.createTrack(projectID: projectID, name: name); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
     }}
 
-    @MainActor func uiCreateScene(in trackID: UUID) { uiPromptName(defaultName: "Scene") { [self] title in
+    @MainActor func uiCreateScene(in trackID: UUID) { uiPromptName(defaultName: "Chat") { [self] title in
         guard let repo else { return }
         do { _ = try repo.createScene(trackID: trackID, title: title); try store.loadFromRepository(); reloadLibraryTree() } catch { print(error) }
     }}
@@ -782,13 +949,13 @@ extension WorkspaceViewModel {
                 title: session.title,
                 subtitle: subtitle,
                 iconName: "bubble.left.and.text.bubble.fill",
-                typeLabel: "SESSION",
+                typeLabel: "MESSAGE",
                 payload: .session(id: session.id)
             )
             candidates.append((item, session.lastUsedAt))
         }
 
-        // Projects, tracks, scenes
+        // Projects, topics, chats
         for project in store.allProjects {
             let projectItem = CommandSpaceItem(
                 id: project.id,
@@ -810,7 +977,7 @@ extension WorkspaceViewModel {
                     title: track.name,
                     subtitle: project.name,
                     iconName: "rectangle.3.offgrid.bubble.left.fill",
-                    typeLabel: "TRACK",
+                    typeLabel: "TOPIC",
                     payload: .track(projectID: project.id, trackID: track.id)
                 )
                 candidates.append((trackItem, track.lastOpenedSceneID.flatMap { store.scene(id: $0)?.updatedAt }))
@@ -824,7 +991,7 @@ extension WorkspaceViewModel {
                         title: scene.title,
                         subtitle: subtitle,
                         iconName: "square.stack.3d.down.right.fill",
-                        typeLabel: "SCENE",
+                        typeLabel: "CHAT",
                         payload: .scene(projectID: project.id, trackID: track.id, sceneID: scene.id)
                     )
                     candidates.append((sceneItem, scene.updatedAt))
@@ -893,7 +1060,7 @@ extension WorkspaceViewModel {
             CommandSpaceItem(
                 id: UUID(),
                 kind: .action,
-                title: "New Scene",
+                title: "New Chat",
                 subtitle: "In the current track",
                 iconName: "plus.square.stack",
                 typeLabel: "ACTION",
@@ -1131,7 +1298,7 @@ extension WorkspaceViewModel {
                 let b = Block(
                     sceneID: scene.id,
                     kind: .conversation,
-                    title: "Chat",
+                    title: "Welcome to VPPChat!",
                     subtitle: nil,
                     messages: [],
                     documentText: nil,
@@ -1157,7 +1324,7 @@ extension WorkspaceViewModel {
 
         store.update(project: project)
 
-        if let track = createTrack(in: project.id, name: "Track 1") {
+        if let track = createTrack(in: project.id, name: "Topic") {
             project.tracks = [track.id]
             project.lastOpenedTrackID = track.id
             store.update(project: project)
@@ -1224,7 +1391,7 @@ extension WorkspaceViewModel {
     }
 
     private func isPlaceholder(_ s: String, prefix: String) -> Bool {
-        // matches: "Project 1", "Track 12", "Scene 3", "Session 9"
+        // matches: "Project 1", "Topic 12", "Chat 3", "Turn 9"
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed == prefix || trimmed.hasPrefix(prefix + " ") else { return false }
         let parts = trimmed.split(separator: " ")
@@ -1251,13 +1418,13 @@ extension WorkspaceViewModel {
 
     private func shouldAutoNameScene(_ scene: Scene) -> Bool {
         guard isUntitled(scene.title) || isPlaceholder(scene.title, prefix: "Scene") || scene.title == "Scene" else { return false }
-        // avoid system containers if they ever come through as scenes
+        // avoid system containers if they ever come through as chats
         if scene.title == "Console Chats" || scene.title == "Welcome" { return false }
         return true
     }
 
     private func shouldAutoNameTrack(_ track: Track) -> Bool {
-        guard isUntitled(track.name) || isPlaceholder(track.name, prefix: "Track") || track.name == "Track" else { return false }
+        guard isUntitled(track.name) || isPlaceholder(track.name, prefix: "Topic") || track.name == "Topic" else { return false }
         if track.name == "Sessions" || track.name == "Start Here" { return false }
         return true
     }
@@ -1270,7 +1437,7 @@ extension WorkspaceViewModel {
     
     @MainActor
     func autoTitleSceneUsingCompletions(sceneID: UUID) async {
-      // Find a conversation in this scene to use as the naming seed.
+      // Find a conversation in this chat to use as the naming seed.
       let convoID = store.blocks.values
         .filter { $0.sceneID == sceneID && $0.kind == .conversation }
         .sorted { $0.updatedAt > $1.updatedAt }
@@ -1359,7 +1526,7 @@ extension WorkspaceViewModel {
                 let project = store.project(id: track.projectID)
             else { return nil }
     
-            // Sibling tracks (same project, excluding this one), max 5
+            // Sibling topics (same project, excluding this one), max 5
             let siblingTrackNames: [String] = project.tracks
                 .filter { $0 != track.id }
                 .compactMap { store.track(id: $0)?.name }
@@ -1368,13 +1535,13 @@ extension WorkspaceViewModel {
                 .prefix(5)
                 .map { "• \($0)" }
     
-            // Scenes in this track, max 8
+            // chats in this topic, max 8
             let scenes: [Scene] = track.scenes.compactMap { store.scene(id: $0) }
             let sceneLines = scenes
                 .prefix(8)
                 .map { "• \($0.title)" }
     
-            // Conversations across scenes: include title + short excerpt, capped
+            // Conversations across chats: include title + short excerpt, capped
             var convoLines: [String] = []
             for scene in scenes {
                 let convos = store.blocks(in: scene)
@@ -1411,13 +1578,13 @@ extension WorkspaceViewModel {
             out += "Project: \(project.name)\n"
             out += "Track (current): \(track.name)\n\n"
     
-            out += "SIBLING TRACKS (same project, max 5)\n"
+            out += "SIBLING TOPICS (same project, max 5)\n"
             out += siblingTrackNames.isEmpty ? "• (none)\n\n" : siblingTrackNames.joined(separator: "\n") + "\n\n"
     
-            out += "SCENES (this track, max 8)\n"
+            out += "CHATS (this track, max 8)\n"
             out += sceneLines.isEmpty ? "• (none)\n\n" : sceneLines.joined(separator: "\n") + "\n\n"
     
-            out += "CONVERSATIONS (titles + excerpts, max 8)\n"
+            out += "MESSAGES (titles + excerpts, max 8)\n"
             out += convoLines.isEmpty ? "• (none)\n" : convoLines.joined(separator: "\n")
     
             let ctx = out.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1440,7 +1607,7 @@ extension WorkspaceViewModel {
 
         Rules:
         - name: 2–6 words, Title Case, no quotes, no emojis, no trailing punctuation.
-        - summary: optional; only include for scenes (1 sentence, <= 14 words).
+        - summary: optional; only include for chats (1 sentence, <= 14 words).
         """
 
         let user = """
@@ -1539,7 +1706,7 @@ extension WorkspaceViewModel {
             }
         }
 
-        // Scene / Track / Project cascade (only if still placeholders)
+        // chat / topic / Project cascade (only if still placeholders)
         guard let scene = store.scene(id: convoBlock.sceneID) else { return }
         guard let track = store.track(id: scene.trackID) else { return }
         guard let project = store.project(id: track.projectID) else { return }
@@ -1555,7 +1722,7 @@ extension WorkspaceViewModel {
                         self.autoNamedKeys.insert(self.autoNameKey(.scene, scene.id))
                     }
                 } catch {
-                    print("❌ auto-name scene failed:", error)
+                    print("❌ auto-name chat failed:", error)
                 }
             }
         }
@@ -1668,7 +1835,7 @@ extension WorkspaceViewModel {
         }
 
         // Seed so Studio/Atlas sends don't silently no-op.
-        // Title will be refined later once we bind this to a Block/Scene hierarchy.
+        // Title will be refined later once we bind this to a message/chat hierarchy.
         let seeded = ConsoleSession(
             id: sessionID,
             title: "Session",
@@ -1694,7 +1861,7 @@ extension WorkspaceViewModel {
     }
     @MainActor
     func createConsoleConversation(title: String? = nil) -> Block.ID? {
-        // pick a safe scene to attach the block to
+        // pick a safe chat to attach the block to
         let fallbackSceneID: Scene.ID? = selectedSceneID
             ?? store.allProjects.first
                 .flatMap { $0.tracks.first }
@@ -1783,7 +1950,7 @@ extension WorkspaceViewModel {
             let lc = t.lowercased()
             if lc == "untitled" { return true }
             // treat common “new entity” defaults as untitled
-            let defaults: Set<String> = ["new scene", "new track", "new project", "new session", "new chat"]
+            let defaults: Set<String> = ["new chat", "new track", "new project", "new session", "new chat"]
             return defaults.contains(lc)
         }
 

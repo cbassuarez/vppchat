@@ -82,6 +82,10 @@ struct MainShellView: View {
                 .padding(18)
             }
         }
+        .sheet(isPresented: $workspaceVM.isFirstRunOnboardingPresented) {
+          FirstRunOnboardingWizard()
+            .environmentObject(workspaceVM)
+        }
         .background(Color.clear)
         .onAppear {
             print("MainShellView workspace instance: \(workspaceVM.instanceID)")

@@ -24,7 +24,7 @@ struct MainToolbar: View {
             HStack(spacing: 8) {
                 modeChip(icon: "bubble.left.and.bubble.right.fill", label: "Console", mode: .console)
                 modeChip(icon: "slider.horizontal.3", label: "Studio", mode: .studio)
-                modeChip(icon: "square.grid.2x2", label: "Atlas", mode: .atlas)
+                modeChip(icon: "compass.drawing", label: "Atlas", mode: .atlas)
             }
 
             Spacer()

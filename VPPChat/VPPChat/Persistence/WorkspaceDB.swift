@@ -256,10 +256,10 @@ extension WorkspaceDB {
             VALUES ('\(SeedIDs.projGettingStarted)', '\(SeedIDs.envMain)', 'Getting Started', 0, \(now), \(now), NULL, NULL);
 
             INSERT OR IGNORE INTO tracks (id, projectID, name, sortIndex, lastOpenedSceneID, createdAt, updatedAt, deletedAt, deletedRootID)
-            VALUES ('\(SeedIDs.track1)', '\(SeedIDs.projGettingStarted)', 'Track 1', 0, '\(SeedIDs.sceneChat)', \(now), \(now), NULL, NULL);
+            VALUES ('\(SeedIDs.track1)', '\(SeedIDs.projGettingStarted)', 'Topic', 0, '\(SeedIDs.sceneChat)', \(now), \(now), NULL, NULL);
 
             INSERT OR IGNORE INTO scenes (id, trackID, title, sortIndex, createdAt, updatedAt, deletedAt, deletedRootID)
-            VALUES ('\(SeedIDs.sceneChat)', '\(SeedIDs.track1)', 'Chat', 0, \(now), \(now), NULL, NULL);
+            VALUES ('\(SeedIDs.sceneChat)', '\(SeedIDs.track1)', 'Welcome to VPPChat!', 0, \(now), \(now), NULL, NULL);
 
             INSERT OR IGNORE INTO blocks (id, sceneID, kind, title, subtitle, isCanonical, documentText, createdAt, updatedAt, deletedAt, deletedRootID)
             VALUES ('\(SeedIDs.welcomeBlock)', '\(SeedIDs.sceneChat)', 'conversation', 'Welcome', NULL, 1, NULL, \(now), \(now), NULL, NULL);

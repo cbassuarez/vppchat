@@ -20,8 +20,8 @@ enum NewEntityKind: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .environment: return "Environment"
         case .project: return "Project"
-        case .track: return "Track"
-        case .scene: return "Scene"
+        case .track: return "Topic"
+        case .scene: return "Chat"
         }
     }
 
@@ -30,11 +30,11 @@ enum NewEntityKind: String, CaseIterable, Identifiable, Hashable {
         case .environment:
             return "Top-level. Context is not shared across environments."
         case .project:
-            return "A workspace for a single body of work. Holds tracks."
+            return "A workspace for a single body of work. Holds topics."
         case .track:
-            return "A lane for related scenes."
+            return "A lane for related chats."
         case .scene:
-            return "A single session. Holds blocks (conversations/documents)."
+            return "A single session. Holds messages, code blocks, and files (conversations/documents)."
         }
     }
 
@@ -227,7 +227,7 @@ struct NewEntityWizard: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(AppTheme.Colors.textPrimary)
 
-                Text("Environment ▸ Project ▸ Track ▸ Scene")
+                Text("Environment ▸ Project ▸ Topic ▸ Chat")
                     .font(.system(size: 11))
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }
@@ -371,7 +371,7 @@ struct NewEntityWizard: View {
                 Image(systemName: "info.circle")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(AppTheme.Colors.textSubtle)
-                Text("Scenes contain blocks. Console “sessions” are conversation blocks, stored inside scenes.")
+                Text("Chats contain messages or documents. Console “turns” are conversation blocks, stored inside chats or accessible from the Atlas tab.")
                     .font(.system(size: 11))
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }
@@ -404,7 +404,7 @@ struct NewEntityWizard: View {
 
             if kind == .scene {
                 placementPicker(
-                    label: "Track",
+                    label: "Topic",
                     selection: $trackID,
                     options: trackOptions
                 )
@@ -622,7 +622,7 @@ struct NewEntityWizard: View {
 
     private var defaultNamePlaceholder: String {
         switch kind {
-        case .environment: return "e.g. Default"
+        case .environment: return "e.g. Environments"
         case .project: return "e.g. Constructions"
         case .track: return "e.g. Research"
         case .scene: return "e.g. Welcome"

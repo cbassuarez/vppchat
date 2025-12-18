@@ -9,7 +9,6 @@
 import SwiftUI
 
 struct RootWindowView: View {
-  @EnvironmentObject private var workspace: WorkspaceViewModel
   @Binding var shellMode: ShellMode
 
   @EnvironmentObject private var workspaceVM: WorkspaceViewModel
@@ -46,10 +45,5 @@ struct RootWindowView: View {
             onDismiss: { workspaceVM.isSceneCreationWizardPresented = false }
         )
     }
-    .sheet(isPresented: $workspaceVM.isFirstRunOnboardingPresented) {
-          FirstRunOnboardingWizard()
-            .environmentObject(workspaceVM)
-        }
-
   }
 }

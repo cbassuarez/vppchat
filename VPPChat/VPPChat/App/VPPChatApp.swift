@@ -177,7 +177,7 @@ struct VPPChatApp: App {
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var llmConfig = LLMConfigStore.shared
     private var workspaceVM: WorkspaceViewModel { appViewModel.workspace }
-    
+    @AppStorage("vppchat.onboarding.completed") private var onboardingCompleted: Bool = false
     @State private var shellMode: ShellMode
     private let shellModeKey = "vppchat.shell.lastMode"
     
@@ -205,21 +205,12 @@ struct VPPChatApp: App {
               .environmentObject(appViewModel.workspace)
               .environmentObject(themeManager)
               .environmentObject(llmConfig)
-              .sheet(
-                 isPresented: Binding(
-                   get: { workspaceVM.isFirstRunOnboardingPresented },
-                   set: { workspaceVM.isFirstRunOnboardingPresented = $0 }
-                 )
-               ) {
-                FirstRunOnboardingWizard()
-                  .environmentObject(workspaceVM)
-              }
+              
 
               .onAppear {
                 workspaceVM.switchToShell = { mode in shellMode = mode }
                 workspaceVM.currentShellMode = shellMode
                 workspaceVM.ensureDefaultConsoleSession()
-                  DispatchQueue.main.async { workspaceVM.isFirstRunOnboardingPresented = true }
 
               }
               .onChange(of: shellMode) { newValue in
@@ -229,16 +220,6 @@ struct VPPChatApp: App {
             // 🔊 Tell the shader when Command Space opens/closes
             .onChange(of: workspaceVM.isCommandSpaceVisible) { visible in
                 themeManager.signal(visible ? .commandSpaceOpen : .commandSpaceClose)
-            }
-            .onAppear {
-                print("APP  appViewModel.workspace.instanceID =", appViewModel.workspace.instanceID)
-
-                workspaceVM.switchToShell = { mode in
-                    shellMode = mode
-                }
-                workspaceVM.currentShellMode = shellMode
-                workspaceVM.ensureDefaultConsoleSession()
-                DispatchQueue.main.async { workspaceVM.isFirstRunOnboardingPresented = true }
             }
             .onChange(of: shellMode) { newValue in
                 workspaceVM.currentShellMode = newValue

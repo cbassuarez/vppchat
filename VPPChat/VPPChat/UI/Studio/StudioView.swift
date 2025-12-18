@@ -205,8 +205,9 @@ struct StudioView: View {
                     activePopover = nil
                 },
                 onNewWizard: {
-                                vm.presentSceneCreationWizard(initialGoal: .newScene)
-                                activePopover = nil
+                    vm.presentNewChatEnvironmentFlow()
+                    activePopover = nil
+
                             }
 
             )
@@ -352,10 +353,10 @@ struct StudioView: View {
 
     private var placeholder: some View {
         VStack(alignment: .center, spacing: 8) {
-            Text("Select a scene to begin")
+            Text("Select a chat to begin")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(StudioTheme.Colors.textPrimary)
-            Text("Use the tracks rail to choose a scene.")
+            Text("Use the topics bar to choose a chat.")
                 .font(.system(size: 12))
                 .foregroundStyle(StudioTheme.Colors.textSecondary)
         }

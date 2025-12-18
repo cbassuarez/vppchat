@@ -16,9 +16,9 @@ Welcome to **VPP Studio** 👋
 This is the **single canonical Welcome chat** shared across **Console / Studio / Atlas**.
 
 ### How this app is structured
-**Project ▸ Track ▸ Scene ▸ Block**
-- **Conversation blocks** are “sessions” (Console shows the same thing).
-- **Document blocks** are saved notes (from Console “Save block”, etc.).
+**Project ▸ Topic ▸ Chat ▸ Messages**
+- **Conversations** are “turns” (Console shows the same thing).
+- **Documents** are saved notes (from Console “Save block”, etc.).
 
 ### How to talk to the system (VPP)
 Start your message with a tag on line 1:

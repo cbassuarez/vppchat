@@ -109,7 +109,12 @@ final class WorkspaceSceneWizardAdapter: SceneWizardAPI, @unchecked Sendable {
     }
 
     func goToStudio() async {
+        if vm.isSceneWizardOnboarding {
+            await MainActor.run { vm.markOnboardingComplete() }
+            await MainActor.run { vm.isSceneWizardOnboarding = false }
+        }
         vm.isSceneCreationWizardPresented = false
+
         vm.goToStudio()
     }
 
@@ -127,7 +132,7 @@ final class WorkspaceSceneWizardAdapter: SceneWizardAPI, @unchecked Sendable {
                 let b = Block(
                     sceneID: scene.id,
                     kind: .conversation,
-                    title: "Chat",
+                    title: "New Chat",
                     subtitle: nil,
                     messages: [],
                     documentText: nil,
@@ -144,7 +149,12 @@ final class WorkspaceSceneWizardAdapter: SceneWizardAPI, @unchecked Sendable {
             vm.selectedBlockID = convo.id
         }
 
+        if vm.isSceneWizardOnboarding {
+            await MainActor.run { vm.markOnboardingComplete() }
+            await MainActor.run { vm.isSceneWizardOnboarding = false }
+        }
         vm.isSceneCreationWizardPresented = false
+
         vm.goToConsole()
     }
 }

@@ -339,7 +339,7 @@ struct AtlasView: View {
 
     private var onboardingEmptyState: some View {
         VStack(spacing: 6) {
-            Text("You haven’t saved any blocks yet.")
+            Text("You haven’t saved any messages yet.")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(StudioTheme.Colors.textPrimary)
 
@@ -374,7 +374,7 @@ struct AtlasView: View {
 
     private var filteredEmptyState: some View {
         VStack(spacing: 6) {
-            Text("No blocks match these filters.")
+            Text("No items match these filters.")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(StudioTheme.Colors.textPrimary)
 

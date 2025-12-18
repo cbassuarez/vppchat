@@ -56,7 +56,7 @@ public struct SceneWizardReducer {
 
         case .targetTrack:
             // You can continue if:
-            // - an existing track is selected, OR
+            // - an existing topic is selected, OR
             // - you’ve chosen to create upstream (represented by advancing via dedicated buttons in UI)
             return state.trackID != nil
 

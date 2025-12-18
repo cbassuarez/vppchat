@@ -319,8 +319,9 @@ struct SourcesModal: View {
                     .font(.system(size: 11))
                     .foregroundStyle(AppTheme.Colors.textSecondary)
             }
-
-            Button {
+                        .frame(maxWidth: .infinity, alignment: .leading)
+            
+                        Button {
                 deleteSource(id: refID)
             } label: {
                 Image(systemName: "trash")
@@ -330,6 +331,7 @@ struct SourcesModal: View {
             .buttonStyle(.plain)
             .padding(.top, 2)
             .help("Remove")
+            .fixedSize()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

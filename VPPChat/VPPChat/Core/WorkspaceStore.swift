@@ -9,7 +9,7 @@ private var repo: WorkspaceRepository?
 
     private var didBootstrapFromRepo = false
     var isSeedOnlyWorkspace: Bool {
-      // “seed-only” = nothing beyond the seeded Getting Started container + canonical blocks,
+      // “seed-only” = nothing beyond the seeded Getting Started container + canonical messages,
       // ignoring the Console container if it exists.
 
       // 1) Projects: only allow Getting Started + Console
@@ -18,19 +18,19 @@ private var repo: WorkspaceRepository?
       }
       if userProjectExists { return false }
 
-      // 2) Tracks: only allow Basics + Sessions
+      // 2) topics: only allow Basics + Sessions
       let userTrackExists = tracks.values.contains { t in
         t.name != gettingStartedTrackName && t.name != consoleTrackName
       }
       if userTrackExists { return false }
 
-      // 3) Scenes: only allow Welcome + Console Chats
+      // 3) chats: only allow Welcome + Console Chats
       let userSceneExists = scenes.values.contains { s in
         s.title != gettingStartedSceneTitle && s.title != consoleSceneTitle
       }
       if userSceneExists { return false }
 
-      // 4) Blocks: allow only canonical welcome + (optional) canonical model blocks
+      // 4) messages: allow only canonical welcome + (optional) canonical model messages
       let allowedCanonical: Set<UUID> = [
         Self.canonicalWelcomeBlockID,
         Self.canonicalModelDocBlockID,
@@ -57,13 +57,13 @@ private var repo: WorkspaceRepository?
     let docText = """
     **How work is organized**
 
-    Environment → Project → Track → Scene → Blocks
+    Environment → Project → Topic → Chat → Messages
 
     - **Environment**: top-level space
     - **Project**: a body of work inside an environment
-    - **Track**: parallel lanes inside a project
-    - **Scene**: a container for blocks
-    - **Blocks**: Chat (sessions) and Docs (notes)
+    - **Topic**: parallel lanes inside a project
+    - **Chat**: a container for messages
+    - **Messages**: Chat (turns) and Docs (notes)
     """
 
     // Doc block (idempotent)
@@ -111,7 +111,7 @@ private var repo: WorkspaceRepository?
         id: UUID(),
         isUser: false,
         timestamp: .now,
-        body: "Tell me what you’re working on — I’ll propose a Project ▸ Track ▸ Scene plan.",
+        body: "Tell me what you’re working on — I’ll propose a Project ▸ Topic ▸ Chat plan.",
         tag: .g,
         cycleIndex: 1,
         assumptions: 0,
@@ -143,7 +143,7 @@ private var repo: WorkspaceRepository?
         let snap = try repo.snapshot(includeDeleted: false)
 
         // ⚠️ Minimal implementation: rebuild in-memory dictionaries from DB.
-        // This assumes you already store blocks/scenes/tracks/projects in dictionaries as seen in your code.
+        // This assumes you already store messages/chats/topics/projects in dictionaries as seen in your code.
         // 1) Clear
         blocks.removeAll()
         scenes.removeAll()
@@ -162,7 +162,7 @@ private var repo: WorkspaceRepository?
             let name: String = r["name"]
             projects[id] = Project(id: id, name: name)
         }
-        // Tracks
+        // topics
         for r in snap.tracks {
             let id = UUID(uuidString: r["id"])!
             let projectID = UUID(uuidString: r["projectID"])!
@@ -173,7 +173,7 @@ private var repo: WorkspaceRepository?
                             projects[projectID] = p
                         }
         }
-        // Scenes
+        // chats
         for r in snap.scenes {
             let id = UUID(uuidString: r["id"])!
             let trackID = UUID(uuidString: r["trackID"])!
@@ -185,7 +185,7 @@ private var repo: WorkspaceRepository?
                         }
         }
 
-        // Blocks
+        // messages
         for r in snap.blocks {
             let id = UUID(uuidString: r["id"])!
             let sceneID = UUID(uuidString: r["sceneID"])!
@@ -218,7 +218,7 @@ private var repo: WorkspaceRepository?
             )
         }
 
-        // Messages → attach to blocks
+        // Messages → attach to messages
         for r in snap.messages {
             let id = UUID(uuidString: r["id"])!
             let blockID = UUID(uuidString: r["blockID"])!
@@ -302,9 +302,9 @@ private var repo: WorkspaceRepository?
             This is the **single canonical Welcome chat** shared across **Console / Studio / Atlas**.
             
             ### How this app is structured
-            **Project ▸ Track ▸ Scene ▸ Block**
-            - **Conversation blocks** are “sessions” (Console shows the same thing).
-            - **Document blocks** are saved notes (from Console “Save block”, etc.).
+            **Project ▸ Topic ▸ Chat ▸ Messages**
+            - **Conversation messages** are “turns” (Console shows the same thing).
+            - **Documents** are saved notes (from Console “Save block”, etc.).
             
             ### How to talk to the system (VPP)
             Start your message with a tag on line 1:
@@ -401,7 +401,7 @@ private var repo: WorkspaceRepository?
 
     }
 
-    // MARK: - Console container (Project ▸ Track ▸ Scene)
+    // MARK: - Console container (Project ▸ Topic ▸ Chat)
 
     private var consoleProjectName: String { "Console" }
     private var consoleTrackName: String { "Sessions" }
@@ -446,7 +446,7 @@ private var repo: WorkspaceRepository?
         return scene.id
     }
 
-    // MARK: - Getting Started container (Project ▸ Track ▸ Scene)
+    // MARK: - Getting Started container (Project ▸ Topic ▸ Scene)
         func ensureGettingStartedSceneID() -> Scene.ID {
             // 1) project
             var project: Project
@@ -583,7 +583,7 @@ private var repo: WorkspaceRepository?
         // ✅ Persist: message row + bump block.updatedAt in DB (no-op if repo not set)
                 persistAppendMessage(blockID: blockID, message: message, newBlockUpdatedAt: block.updatedAt)
         
-                // ✅ Auto-title: only for newly-created scenes (placeholder title)
+                // ✅ Auto-title: only for newly-created chats (placeholder title)
         if message.isUser, let sceneID = blocks[blockID]?.sceneID {
               maybeRequestCompletionAutoTitle(sceneID: sceneID)
             }
@@ -656,7 +656,7 @@ private var repo: WorkspaceRepository?
         }
     }
 
-    // MARK: - Auto scene naming (after first user turn)
+    // MARK: - Auto chat naming (after first user turn)
     @MainActor
       private func maybeRequestCompletionAutoTitle(sceneID: UUID) {
         guard let scene = scenes[sceneID] else { return }
@@ -673,7 +673,7 @@ private var repo: WorkspaceRepository?
         func purgeLegacyWelcomeArtifacts() {
             // 1) Remove the old demo project (seed-only)
             if let demo = projects.values.first(where: { $0.name == "GlassGPT Export" }) {
-                // remove tracks + scenes
+                // remove topics + chats
                 for trackID in demo.tracks {
                     if let t = tracks[trackID] {
                         for sceneID in t.scenes { scenes.removeValue(forKey: sceneID) }

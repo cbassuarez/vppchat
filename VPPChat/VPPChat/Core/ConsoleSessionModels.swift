@@ -14,7 +14,7 @@ struct LinkedBlockPath: Codable, Hashable {
     var sceneID: Scene.ID
     var blockID: Block.ID
 
-    /// Preformatted label like "Project ▸ Track ▸ Scene"
+    /// Preformatted label like "Project ▸ Topic ▸ Scene"
     var displayPath: String
 }
 

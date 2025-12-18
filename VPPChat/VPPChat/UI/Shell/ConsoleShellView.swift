@@ -4,9 +4,10 @@ struct ConsoleShellView: View {
     @EnvironmentObject private var workspace: WorkspaceViewModel
     var body: some View {
         HStack(spacing: 16) {
-            WorkspaceLibrarySidebar()
+            TracksRailView()
                 .environmentObject(workspace)
-                .frame(width: 300)
+                .frame(width: 260)
+
 
             if let selected = workspace.selectedConsoleSession {
                 HStack(spacing: 0) {

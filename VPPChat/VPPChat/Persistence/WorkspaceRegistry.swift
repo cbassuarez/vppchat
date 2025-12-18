@@ -26,7 +26,7 @@ struct WorkspaceRegistry: Codable {
         let url = AppSupportPaths.registryURL
         if !FileManager.default.fileExists(atPath: url.path) {
             var reg = WorkspaceRegistry()
-            let entry = try reg.createWorkspace(name: "Default")
+            let entry = try reg.createWorkspace(name: "Environments")
             reg.entries = [entry]
             try reg.save()
             UserDefaults.standard.set(entry.id.uuidString, forKey: activeWorkspaceKey)
@@ -37,7 +37,7 @@ struct WorkspaceRegistry: Codable {
 
         // Ensure at least one non-deleted workspace exists
         if reg.entries.filter({ $0.deletedAt == nil }).isEmpty {
-            let entry = try reg.createWorkspace(name: "Default")
+            let entry = try reg.createWorkspace(name: "Environments")
             reg.entries.append(entry)
             try reg.save()
             UserDefaults.standard.set(entry.id.uuidString, forKey: activeWorkspaceKey)

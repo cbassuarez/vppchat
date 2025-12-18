@@ -137,7 +137,7 @@ struct CommandSpaceView: View {
                 .foregroundStyle(StudioTheme.Colors.textSecondary)
                 .padding(.top, 4)
         } else if items.isEmpty && query.isEmpty {
-            Text("Recent sessions, blocks, and scenes will appear here.")
+            Text("Recent messages will appear here.")
                 .font(.system(size: 11))
                 .foregroundStyle(StudioTheme.Colors.textSecondary)
                 .padding(.top, 4)
