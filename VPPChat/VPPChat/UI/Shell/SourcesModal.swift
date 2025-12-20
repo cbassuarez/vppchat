@@ -7,6 +7,9 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - Kind popover plumbing (Atlas-style)
 
@@ -28,12 +31,16 @@ struct SourcesModal: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var draftTable: [VppSourceRef] = []
+    @State private var attachmentCache: [String: FileAttachment] = [:]
     
     // repo editor
     @State private var editingRepoIndex: Int? = nil
     
     @State private var isPickingFile: Bool = false
     @State private var filePickTargetID: String? = nil
+    @State private var previewTarget: FilePreviewTarget? = nil
+    @State private var showUnreadableWarning: Bool = false
+    @State private var isDropTargeted: Bool = false
 
     // which row's kind dropdown is open
     @State private var activeKindPickerID: String? = nil
@@ -85,6 +92,11 @@ struct SourcesModal: View {
         .frame(minWidth: 560, minHeight: 440)
         .background(AppTheme.Colors.surface0)
         .onAppear { seedFromBinding() }
+        .onChange(of: attachmentCache) { _ in
+            if unreadableAttachmentCount == 0 {
+                showUnreadableWarning = false
+            }
+        }
         .fileImporter(
           isPresented: $isPickingFile,
           allowedContentTypes: [.item],
@@ -108,9 +120,10 @@ struct SourcesModal: View {
                     relativeTo: nil
                   )
                   draftTable[i].securityBookmark = bm
+                  ingestPickedFile(id: id, url: url, bookmark: bm)
                 } catch {
-                  // If bookmark creation fails, keep ref as fallback
                   draftTable[i].securityBookmark = nil
+                  setNeedsAccessPlaceholder(id: id, path: url.path)
                 }
               focusedSourceID = id
             }
@@ -146,6 +159,16 @@ struct SourcesModal: View {
                     EmptyView()
                   }
                 }
+        .sheet(item: $previewTarget) { target in
+          if let attachment = attachmentCache[target.id] {
+            FilePreviewSheet(
+              attachment: attachment,
+              onRefresh: { refreshAttachment(id: target.id, force: true) }
+            )
+          } else {
+            EmptyView()
+          }
+        }
     }
 
     // MARK: - Header
@@ -203,6 +226,9 @@ struct SourcesModal: View {
 
             addRow
         }
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleFileDrop(providers: providers)
+        }
     }
 
     private var emptyState: some View {
@@ -246,37 +272,7 @@ struct SourcesModal: View {
                     kindChip(ref: ref)
 
                     if ref.wrappedValue.kind == .file {
-                      HStack(spacing: 8) {
-                        TextField("Choose a file…", text: Binding(
-                          get: { ref.wrappedValue.ref },
-                          set: { ref.wrappedValue.ref = $0 }
-                        ))
-                        .textFieldStyle(.plain)
-                        .font(AppTheme.Typography.mono(12))
-                        .disableAutocorrection(true)
-                        .padding(10)
-                        .background(AppTheme.Colors.surface1)
-                        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
-                        .overlay(
-                          RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                            .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                        )
-                        .focused($focusedSourceID, equals: refID)
-
-                        Button("Browse…") {
-                          beginPickFile(for: refID)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(AppTheme.Colors.surface1)
-                        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
-                        .overlay(
-                          RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                            .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                        )
-                        .foregroundStyle(AppTheme.Colors.textSecondary)
-                      }
+                      fileRowContent(refID: refID, ref: ref)
                     } else if ref.wrappedValue.kind == .repo {
                                           let idx = draftTable.firstIndex(where: { $0.id == refID }) ?? -1
                                           HStack(spacing: 10) {
@@ -350,8 +346,90 @@ struct SourcesModal: View {
             RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
                 .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
         )
+        .onAppear {
+            ensureAttachment(for: ref.wrappedValue)
+        }
     }
     
+    private func fileRowContent(refID: String, ref: Binding<VppSourceRef>) -> some View {
+      let attachment = attachmentCache[refID]
+      let displayName = attachment?.identity.displayName ?? ref.wrappedValue.displayName ?? fallbackFileName(from: ref.wrappedValue.ref)
+      let secondary = attachment.map(fileSecondaryText) ?? "Size unknown · \(fileExtensionLabel(from: displayName))"
+      let tooltip = attachment?.resolvedURLPath ?? ref.wrappedValue.ref
+
+      return VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .top) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text(displayName)
+              .font(AppTheme.Typography.mono(12))
+              .foregroundStyle(AppTheme.Colors.textPrimary)
+              .lineLimit(1)
+              .truncationMode(.middle)
+              .help(tooltip)
+
+            Text(secondary)
+              .font(.system(size: 11))
+              .foregroundStyle(AppTheme.Colors.textSecondary)
+          }
+
+          Spacer()
+
+          HStack(spacing: 8) {
+            statusPill(for: attachment?.status)
+
+            Button("Preview…") {
+              previewTarget = FilePreviewTarget(id: refID)
+            }
+            .buttonStyle(.plain)
+            .disabled(attachment?.extraction == nil)
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+
+            Button("Refresh") {
+              refreshAttachment(id: refID, force: true)
+            }
+            .buttonStyle(.plain)
+            .disabled(ref.wrappedValue.securityBookmark == nil)
+            .foregroundStyle(AppTheme.Colors.textSecondary)
+          }
+        }
+
+        HStack(spacing: 8) {
+          TextField("Choose a file…", text: Binding(
+            get: { ref.wrappedValue.ref },
+            set: { ref.wrappedValue.ref = $0 }
+          ))
+          .textFieldStyle(.plain)
+          .font(AppTheme.Typography.mono(12))
+          .disableAutocorrection(true)
+          .padding(10)
+          .background(AppTheme.Colors.surface1)
+          .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+          .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+              .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+          )
+          .focused($focusedSourceID, equals: refID)
+          .onChange(of: ref.wrappedValue.ref) { newValue in
+            handleFilePathEdit(id: refID, newValue: newValue)
+          }
+
+          Button("Browse…") {
+            beginPickFile(for: refID)
+          }
+          .buttonStyle(.plain)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 8)
+          .background(AppTheme.Colors.surface1)
+          .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+          .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+              .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+          )
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+        }
+      }
+    }
+
     private func beginPickFile(for id: String) {
       filePickTargetID = id
       isPickingFile = true
@@ -511,55 +589,60 @@ struct SourcesModal: View {
     // MARK: - Buttons
 
     private var buttons: some View {
-        HStack(spacing: 10) {
-            Button("Clear") {
-                withAnimation(popAnimation) {
-                    sourcesTable = []
-                    sources = .web
-                }
-                dismiss()
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                    .fill(AppTheme.Colors.surface1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                    .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-            )
-            .foregroundStyle(AppTheme.Colors.textSecondary)
+        VStack(spacing: 10) {
+          if showUnreadableWarning {
+            unreadableWarningStrip
+              .transition(.opacity)
+          }
 
-            Spacer()
+          HStack(spacing: 10) {
+              Button("Clear") {
+                  withAnimation(popAnimation) {
+                      sourcesTable = []
+                      sources = .web
+                  }
+                  dismiss()
+              }
+              .buttonStyle(.plain)
+              .padding(.horizontal, 12)
+              .padding(.vertical, 8)
+              .background(
+                  RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                      .fill(AppTheme.Colors.surface1)
+              )
+              .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+              .overlay(
+                  RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                      .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+              )
+              .foregroundStyle(AppTheme.Colors.textSecondary)
 
-            Button("Cancel") { dismiss() }
-                .buttonStyle(.plain)
-                .foregroundStyle(AppTheme.Colors.textSecondary)
+              Spacer()
 
-            Button {
-                sourcesTable = draftTable
-                sources = .web
-                dismiss()
-            } label: {
-                Text("Done")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(StudioTheme.Colors.textPrimary)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                    .fill(StudioTheme.Colors.accentSoft)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                    .stroke(StudioTheme.Colors.accent, lineWidth: 1)
-            )
+              Button("Cancel") { dismiss() }
+                  .buttonStyle(.plain)
+                  .foregroundStyle(AppTheme.Colors.textSecondary)
+
+              Button {
+                  handleDone()
+              } label: {
+                  Text("Done")
+                      .font(.system(size: 12, weight: .semibold))
+                      .foregroundStyle(StudioTheme.Colors.textPrimary)
+              }
+              .buttonStyle(.plain)
+              .padding(.horizontal, 14)
+              .padding(.vertical, 8)
+              .background(
+                  RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                      .fill(StudioTheme.Colors.accentSoft)
+              )
+              .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+              .overlay(
+                  RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                      .stroke(StudioTheme.Colors.accent, lineWidth: 1)
+              )
+          }
         }
         .padding(16)
         .background(AppTheme.Colors.surface0)
@@ -569,6 +652,7 @@ struct SourcesModal: View {
 
     private func seedFromBinding() {
         draftTable = sourcesTable
+        seedAttachmentCache()
     }
 
     private func binding(for id: String) -> Binding<VppSourceRef> {
@@ -588,6 +672,7 @@ struct SourcesModal: View {
     private func deleteSource(id: String) {
         withAnimation(popAnimation) {
             draftTable.removeAll { $0.id == id }
+            attachmentCache.removeValue(forKey: id)
             if focusedSourceID == id { focusedSourceID = nil }
             if activeKindPickerID == id { activeKindPickerID = nil }
         }
@@ -621,6 +706,552 @@ struct SourcesModal: View {
         case .ssh:  return "Example: seb@10.0.0.12:/var/log/app.log"
         }
     }
+
+    private var unreadableWarningStrip: some View {
+      let count = unreadableAttachmentCount
+      return HStack(spacing: 10) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(Color.orange)
+
+        Text("\(count) attachments may not be readable. They will be skipped unless fixed.")
+          .font(.system(size: 11))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+
+        Spacer()
+
+        Button("Review") {
+          showUnreadableWarning = false
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+
+        Button("Proceed") {
+          applyAndDismiss()
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(StudioTheme.Colors.accent)
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .background(AppTheme.Colors.surface1)
+      .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+          .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+      )
+    }
+
+    private var unreadableAttachmentCount: Int {
+      attachmentCache.values.filter { attachment in
+        switch attachment.status {
+        case .needsAccess, .error:
+          return true
+        default:
+          return false
+        }
+      }.count
+    }
+
+    private func handleDone() {
+      if unreadableAttachmentCount > 0 {
+        showUnreadableWarning = true
+        return
+      }
+      applyAndDismiss()
+    }
+
+    private func applyAndDismiss() {
+      sourcesTable = draftTable
+      sources = .web
+      dismiss()
+    }
+
+    private func seedAttachmentCache() {
+      let fileIDs = Set(draftTable.filter { $0.kind == .file }.map(\.id))
+      attachmentCache = attachmentCache.filter { fileIDs.contains($0.key) }
+      for ref in draftTable {
+        ensureAttachment(for: ref)
+      }
+    }
+
+    private func ensureAttachment(for ref: VppSourceRef) {
+      guard ref.kind == .file else {
+        attachmentCache.removeValue(forKey: ref.id)
+        return
+      }
+
+      if let existing = attachmentCache[ref.id] {
+        var updated = existing
+        let displayName = ref.displayName ?? fallbackFileName(from: ref.ref)
+        if updated.identity.displayName != displayName {
+          updated.identity.displayName = displayName
+        }
+        attachmentCache[ref.id] = updated
+        return
+      }
+
+      let displayName = ref.displayName ?? fallbackFileName(from: ref.ref)
+      let identity = FileIdentity(
+        displayName: displayName,
+        ext: URL(fileURLWithPath: displayName).pathExtension.lowercased(),
+        contentType: nil,
+        byteSize: nil,
+        modifiedAt: nil
+      )
+      let status: AttachmentStatus = ref.securityBookmark == nil ? .needsAccess : .picked
+      let attachment = FileAttachment(
+        sourceID: ref.id,
+        bookmark: ref.securityBookmark ?? Data(),
+        resolvedURLPath: ref.ref.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : ref.ref,
+        identity: identity,
+        status: status,
+        extraction: nil
+      )
+      attachmentCache[ref.id] = attachment
+
+      if let bookmark = ref.securityBookmark {
+        Task {
+          await probeAndExtract(id: ref.id, bookmark: bookmark, force: false)
+        }
+      }
+    }
+
+    private func ingestPickedFile(id: String, url: URL, bookmark: Data) {
+      let identity = FileIdentity(
+        displayName: url.lastPathComponent,
+        ext: url.pathExtension.lowercased(),
+        contentType: nil,
+        byteSize: nil,
+        modifiedAt: nil
+      )
+      let attachment = FileAttachment(
+        sourceID: id,
+        bookmark: bookmark,
+        resolvedURLPath: url.path,
+        identity: identity,
+        status: .picked,
+        extraction: nil
+      )
+      attachmentCache[id] = attachment
+
+      Task {
+        await probeAndExtract(id: id, bookmark: bookmark, force: true)
+      }
+    }
+
+    private func refreshAttachment(id: String, force: Bool) {
+      guard let ref = draftTable.first(where: { $0.id == id }) else { return }
+      guard let bookmark = ref.securityBookmark else {
+        setNeedsAccessPlaceholder(id: id, path: ref.ref)
+        return
+      }
+      Task {
+        await probeAndExtract(id: id, bookmark: bookmark, force: force)
+      }
+    }
+
+    private func probeAndExtract(id: String, bookmark: Data, force: Bool) async {
+      await MainActor.run {
+        updateStatus(id: id, status: .reading(progress: 0.2, phase: "Probing"))
+      }
+
+      var isStale = false
+      do {
+        let url = try URL(
+          resolvingBookmarkData: bookmark,
+          options: [.withSecurityScope],
+          relativeTo: nil,
+          bookmarkDataIsStale: &isStale
+        )
+
+        guard url.startAccessingSecurityScopedResource() else {
+          await MainActor.run {
+            updateStatus(id: id, status: .needsAccess)
+          }
+          return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        let identity = try SourcesResolver.statFile(url: url)
+        let previous = attachmentCache[id]
+        let changed = previous.map { $0.identity != identity } ?? false
+
+        if changed, !force, previous?.extraction != nil {
+          await MainActor.run {
+            updateAttachment(id: id, identity: identity, resolvedPath: url.path)
+            updateStatus(id: id, status: .changed)
+          }
+          return
+        }
+
+        let budget = perFileBudget()
+        let extraction = try SourcesResolver.extractFileExcerpt(
+          url: url,
+          source: draftTable.first(where: { $0.id == id }) ?? VppSourceRef(id: id, kind: .file, ref: url.path),
+          identity: identity,
+          budget: budget
+        ) { progress in
+          Task { @MainActor in
+            updateStatus(id: id, status: .reading(progress: 0.2 + progress * 0.6, phase: "Extracting"))
+          }
+        }
+
+        await MainActor.run {
+          updateStatus(id: id, status: .reading(progress: 1.0, phase: "Finalizing"))
+          updateAttachment(id: id, identity: identity, resolvedPath: url.path, extraction: extraction)
+          updateStatus(id: id, status: .ready)
+        }
+      } catch {
+        await MainActor.run {
+          updateStatus(id: id, status: .error(message: error.localizedDescription))
+        }
+      }
+    }
+
+    private func updateAttachment(
+      id: String,
+      identity: FileIdentity,
+      resolvedPath: String?,
+      extraction: FileExtractionResult? = nil
+    ) {
+      guard var attachment = attachmentCache[id] else { return }
+      attachment.identity = identity
+      attachment.resolvedURLPath = resolvedPath
+      if let extraction {
+        attachment.extraction = extraction
+      }
+      attachmentCache[id] = attachment
+    }
+
+    private func updateStatus(id: String, status: AttachmentStatus) {
+      guard var attachment = attachmentCache[id] else { return }
+      attachment.status = status
+      attachmentCache[id] = attachment
+    }
+
+    private func setNeedsAccessPlaceholder(id: String, path: String) {
+      let displayName = fallbackFileName(from: path)
+      let identity = FileIdentity(
+        displayName: displayName,
+        ext: URL(fileURLWithPath: displayName).pathExtension.lowercased(),
+        contentType: nil,
+        byteSize: nil,
+        modifiedAt: nil
+      )
+      let attachment = FileAttachment(
+        sourceID: id,
+        bookmark: Data(),
+        resolvedURLPath: path,
+        identity: identity,
+        status: .needsAccess,
+        extraction: nil
+      )
+      attachmentCache[id] = attachment
+    }
+
+    private func handleFilePathEdit(id: String, newValue: String) {
+      guard looksLikeAbsolutePath(newValue) else { return }
+      guard let idx = draftTable.firstIndex(where: { $0.id == id }) else { return }
+      guard draftTable[idx].securityBookmark == nil else { return }
+
+      draftTable[idx].displayName = URL(fileURLWithPath: newValue).lastPathComponent
+      setNeedsAccessPlaceholder(id: id, path: newValue)
+    }
+
+    private func handleFileDrop(providers: [NSItemProvider]) -> Bool {
+      for provider in providers {
+        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+          provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            let url: URL? = {
+              if let url = item as? URL { return url }
+              if let data = item as? Data { return URL(dataRepresentation: data, relativeTo: nil) }
+              return nil
+            }()
+            guard let url else { return }
+            DispatchQueue.main.async { addDroppedFile(url: url) }
+          }
+          return true
+        }
+      }
+      return false
+    }
+
+    private func addDroppedFile(url: URL) {
+      let id = nextTokenID()
+      var ref = VppSourceRef(id: id, kind: .file, ref: url.path, displayName: url.lastPathComponent)
+      do {
+        let bookmark = try url.bookmarkData(
+          options: [.withSecurityScope],
+          includingResourceValuesForKeys: nil,
+          relativeTo: nil
+        )
+        ref.securityBookmark = bookmark
+        withAnimation(popAnimation) {
+          draftTable.append(ref)
+        }
+        ingestPickedFile(id: id, url: url, bookmark: bookmark)
+      } catch {
+        withAnimation(popAnimation) {
+          draftTable.append(ref)
+        }
+        setNeedsAccessPlaceholder(id: id, path: url.path)
+      }
+      focusedSourceID = id
+    }
+
+    private func perFileBudget() -> Int {
+      let maxCharsPerSource = 20_000
+      let maxTotalChars = 60_000
+      let fileCount = draftTable.filter { $0.kind == .file }.count
+      guard fileCount > 0 else { return maxCharsPerSource }
+      let reserved = Double(maxTotalChars) * 0.8
+      let perFile = Int(floor(reserved / Double(fileCount)))
+      return min(maxCharsPerSource, max(1, perFile))
+    }
+
+    private func fileSecondaryText(_ attachment: FileAttachment) -> String {
+      let sizeText = attachment.identity.byteSize.map { formatByteCount($0) } ?? "Size unknown"
+      let extText = fileExtensionLabel(from: attachment.identity.displayName)
+      let modifiedText = relativeModifiedLabel(attachment.identity.modifiedAt)
+      return "\(sizeText) · \(extText) · \(modifiedText)"
+    }
+
+    private func fileExtensionLabel(from name: String) -> String {
+      let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
+      return ext.isEmpty ? "unknown type" : ".\(ext)"
+    }
+
+    private func fallbackFileName(from path: String) -> String {
+      let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmed.isEmpty { return "Untitled" }
+      return URL(fileURLWithPath: trimmed).lastPathComponent
+    }
+
+    private func relativeModifiedLabel(_ date: Date?) -> String {
+      guard let date else { return "Modified unknown" }
+      let formatter = RelativeDateTimeFormatter()
+      formatter.unitsStyle = .abbreviated
+      return "Modified \(formatter.localizedString(for: date, relativeTo: Date()))"
+    }
+
+    private func formatByteCount(_ bytes: Int64) -> String {
+      let formatter = ByteCountFormatter()
+      formatter.countStyle = .file
+      return formatter.string(fromByteCount: bytes)
+    }
+
+    private func looksLikeAbsolutePath(_ path: String) -> Bool {
+      let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+      return trimmed.hasPrefix("/") || trimmed.hasPrefix("~")
+    }
+
+    @ViewBuilder
+    private func statusPill(for status: AttachmentStatus?) -> some View {
+      let resolvedStatus = status ?? .picked
+      let label: String
+      let tint: Color
+      let showsProgress: Bool
+
+      switch resolvedStatus {
+      case .picked:
+        label = "Picked"
+        tint = AppTheme.Colors.textSecondary
+        showsProgress = false
+      case .needsAccess:
+        label = "Needs access"
+        tint = Color.orange
+        showsProgress = false
+      case .reading(let progress, let phase):
+        let percent = Int((progress * 100).rounded())
+        label = "\(phase) \(percent)%"
+        tint = StudioTheme.Colors.accent
+        showsProgress = true
+      case .ready:
+        label = "Ready"
+        tint = Color.green
+        showsProgress = false
+      case .changed:
+        label = "Changed"
+        tint = Color.orange
+        showsProgress = false
+      case .error:
+        label = "Error"
+        tint = Color.red
+        showsProgress = false
+      }
+
+      HStack(spacing: 6) {
+        if showsProgress, case .reading(let progress, _) = resolvedStatus {
+          ProgressView(value: progress)
+            .progressViewStyle(.linear)
+            .frame(width: 36)
+        }
+        Text(label)
+          .font(.system(size: 10, weight: .semibold))
+      }
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(AppTheme.Colors.surface2)
+      .clipShape(Capsule())
+      .overlay(
+        Capsule()
+          .stroke(tint.opacity(0.6), lineWidth: 1)
+      )
+      .foregroundStyle(tint)
+    }
+}
+
+private struct FilePreviewTarget: Identifiable {
+  let id: String
+}
+
+private struct FilePreviewSheet: View {
+  let attachment: FileAttachment
+  let onRefresh: () -> Void
+
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    VStack(spacing: 12) {
+      HStack {
+        Text("Attachment Preview")
+          .font(.system(size: 14, weight: .semibold))
+        Spacer()
+        Button("Done") {
+          dismiss()
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+      }
+
+      Divider()
+
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          metadataSection
+          strategySection
+          excerptSection
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
+      HStack(spacing: 10) {
+        Button("Copy excerpt") {
+          copyExcerpt()
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+
+        Button("Refresh excerpt") {
+          onRefresh()
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(StudioTheme.Colors.accent)
+
+        Spacer()
+      }
+    }
+    .padding(16)
+    .frame(minWidth: 520, minHeight: 520)
+    .background(AppTheme.Colors.surface0)
+  }
+
+  private var metadataSection: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Metadata")
+        .font(.system(size: 12, weight: .semibold))
+        .textCase(.uppercase)
+        .foregroundStyle(AppTheme.Colors.textSubtle)
+
+      metadataRow(label: "Name", value: attachment.identity.displayName)
+      metadataRow(label: "Type", value: attachment.identity.contentType ?? fileExtensionLabel)
+      metadataRow(label: "Bytes", value: attachment.identity.byteSize.map { "\(formatByteCount($0)) (\($0) bytes)" } ?? "Unknown")
+      metadataRow(label: "Modified", value: attachment.identity.modifiedAt.map { dateString($0) } ?? "Unknown")
+      metadataRow(label: "Extracted at", value: attachment.extraction.map { dateString($0.extractedAt) } ?? "Not extracted")
+    }
+    .padding(12)
+    .background(AppTheme.Colors.surface1)
+    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+        .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+    )
+  }
+
+  private var strategySection: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Strategy")
+        .font(.system(size: 12, weight: .semibold))
+        .textCase(.uppercase)
+        .foregroundStyle(AppTheme.Colors.textSubtle)
+
+      Text(attachment.extraction?.strategy.rawValue ?? "Not extracted")
+        .font(AppTheme.Typography.mono(12))
+        .foregroundStyle(AppTheme.Colors.textPrimary)
+    }
+  }
+
+  private var excerptSection: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Exact excerpt")
+        .font(.system(size: 12, weight: .semibold))
+        .textCase(.uppercase)
+        .foregroundStyle(AppTheme.Colors.textSubtle)
+
+      Text(attachment.extraction?.excerptText ?? "No excerpt available.")
+        .font(AppTheme.Typography.mono(12))
+        .foregroundStyle(AppTheme.Colors.textPrimary)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.Colors.surface1)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+            .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+        )
+    }
+  }
+
+  private func metadataRow(label: String, value: String) -> some View {
+    HStack(alignment: .top, spacing: 8) {
+      Text(label)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(AppTheme.Colors.textSecondary)
+        .frame(width: 90, alignment: .leading)
+      Text(value)
+        .font(.system(size: 11))
+        .foregroundStyle(AppTheme.Colors.textPrimary)
+    }
+  }
+
+  private var fileExtensionLabel: String {
+    let ext = attachment.identity.ext
+    return ext.isEmpty ? "Unknown" : ".\(ext)"
+  }
+
+  private func formatByteCount(_ bytes: Int64) -> String {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    return formatter.string(fromByteCount: bytes)
+  }
+
+  private func dateString(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+    return formatter.string(from: date)
+  }
+
+  private func copyExcerpt() {
+    guard let excerpt = attachment.extraction?.excerptText else { return }
+#if os(macOS)
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(excerpt, forType: .string)
+#endif
+  }
 }
 
 // MARK: - Popover chrome (matches Atlas feel)
