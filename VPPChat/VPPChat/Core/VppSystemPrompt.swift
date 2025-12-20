@@ -39,7 +39,10 @@ Full spec: https://cdn.jsdelivr.net/gh/cbassuarez/viable-prompt-protocol@main/sp
 
   static func sourcesInstruction(tableMarkdown: String) -> String {
     """
-If a sources table is provided, you MUST preserve it in your response body (verbatim markdown), and your footer Sources=<...> must not be <none>.
+If resolved excerpts include HTML/head metadata, you **must** summarize what’s present and only state limitations about what is *not* present (e.g., JS-rendered DOM).
+If a sources table is provided, you MUST preserve it in your response body (verbatim markdown).
+Do not fabricate sources. Cite by source id (s1, s2, ...).
+The table is display-only; do not “expand” hidden refs unless they are explicitly included in resolved payload.
 
 Sources:
 \(tableMarkdown)

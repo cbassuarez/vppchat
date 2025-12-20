@@ -68,9 +68,18 @@ final class OpenAIResponsesClient: LLMClient {
         guard let http = resp as? HTTPURLResponse else {
             throw NSError(domain: "OpenAIResponsesClient", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid HTTP response"])
         }
-        print("HTTP status =", http.statusCode)
-        print("HTTP bytes  =", data.count)
-        
+
+        // 🔎 DIAGNOSTIC LOGS (run on success + failure)
+        print("OPENAI url =", req.url?.absoluteString ?? "(nil)")
+        print("OPENAI status =", http.statusCode)
+        print("OPENAI headers =", http.allHeaderFields)
+        print("OPENAI bytes =", data.count)
+
+        if !(200..<300).contains(http.statusCode) {
+            let rawBody = String(decoding: data, as: UTF8.self)
+            print("OPENAI error body =", rawBody)
+        }
+
         guard (200..<300).contains(http.statusCode) else {
             let msg = Self.extractErrorMessage(from: data) ?? "HTTP \(http.statusCode)"
             throw NSError(domain: "OpenAIResponsesClient", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: msg])

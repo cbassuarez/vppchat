@@ -11,6 +11,8 @@ import SwiftUI
 /// - Single chip: "Sources" (shows mode + count)
 /// - Tap opens SourcesModal as a sheet (matches AssumptionsModal behavior)
 struct SourcesControl: View {
+    @AppStorage("WebRetrievalPolicy") private var webPolicyRaw: String = WebRetrievalPolicy.auto.rawValue
+    private var webPolicy: WebRetrievalPolicy { WebRetrievalPolicy(rawValue: webPolicyRaw) ?? .auto }
     @Binding var sources: VppSources
     @Binding var sourcesTable: [VppSourceRef]
 
@@ -53,8 +55,11 @@ struct SourcesControl: View {
     }
 
     private func chipTitle(isSelected: Bool, count: Int) -> String {
-      let retrieval = (sources == .web) ? "Web On" : "Web Off"
-      if count > 0 {
+        @AppStorage("WebRetrievalPolicy")  var webPolicyRaw: String = WebRetrievalPolicy.auto.rawValue
+         var policy: WebRetrievalPolicy { WebRetrievalPolicy(rawValue: webPolicyRaw) ?? .auto }
+        let isSelected = !sourcesTable.isEmpty
+        let retrieval = (policy == .always) ? "Web Always" : "Web Auto"
+        if count > 0 {
         return "Sources · \(retrieval) · \(count) Attach"
       } else {
         return "Sources · \(retrieval)"

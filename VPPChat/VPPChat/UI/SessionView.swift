@@ -82,6 +82,8 @@ struct SessionView: View {
     // MARK: - Sending pipeline (workspace-routed)
 
     private func handleSend() {
+        let outgoingSourcesTable = sourcesTable
+        let outgoingAssumptions = assumptions
         let trimmed = viewModel.draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -108,9 +110,16 @@ struct SessionView: View {
             contextStrategy: consoleSession?.contextStrategy ?? session.contextStrategy
         )
 
+        let tableSnapshot = sourcesTable
         Task { @MainActor in
-                await workspace.sendPrompt(composedText, in: session.id, config: cfg)
-            }
+          await workspace.sendPrompt(
+            composedText,
+            in: session.id,
+            config: cfg,
+            assumptions: assumptions,
+            sourcesTable: tableSnapshot
+          )
+        }
 
         // ✅ reset after queueing send
         assumptions = .none

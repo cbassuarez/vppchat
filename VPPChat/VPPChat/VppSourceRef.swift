@@ -18,15 +18,66 @@ enum VppSourceKind: String, Codable, Hashable, CaseIterable {
 /// A compact, per-message addressable source reference (for footer tokenization).
 /// Example IDs: "s1", "s2" (stable *within* a message).
 struct VppSourceRef: Identifiable, Codable, Hashable {
-    var id: String          // "s1"
-    var kind: VppSourceKind // file/web/repo/ssh
-    var ref: String         // user-entered locator/pattern
+  var id: String
+  var kind: VppSourceKind
+  var ref: String
 
-    init(id: String, kind: VppSourceKind, ref: String) {
-        self.id = id
-        self.kind = kind
-        self.ref = ref
+  // ✅ new
+  var displayName: String? = nil
+  var securityBookmark: Data? = nil
+    // ✅ structured repo ref (only when kind == .repo)
+      var repo: RepoRef? = nil
+
+  init(
+    id: String,
+    kind: VppSourceKind,
+    ref: String,
+    displayName: String? = nil,
+    securityBookmark: Data? = nil,
+    repo: RepoRef? = nil
+    ) {
+    self.id = id
+    self.kind = kind
+    self.ref = ref
+    self.displayName = displayName
+    self.securityBookmark = securityBookmark
+        self.repo = repo
+  }
+}
+
+extension VppSourceRef {
+  /// Deterministic label for the LLM + UI.
+  var canonicalLabel: String {
+    switch kind {
+    case .repo:
+      if let repo { return repo.canonicalLabel }
+      // fallback for legacy rows (still better than raw github.com noise)
+        return displayName.nilIfEmpty ?? ref
+    default:
+        return displayName.nilIfEmpty ?? ref
     }
+  }
+
+  /// Best-effort migration: if this is a legacy `.repo` row, infer RepoRef once.
+  mutating func normalizeLegacyRepoIfNeeded() {
+    guard kind == .repo, repo == nil else { return }
+    if let parsed = RepoRef.parseLoose(ref) {
+      repo = parsed
+      // keep ref canonical for backwards tooling
+      ref = parsed.canonicalOwnerRepo
+    }
+  }
+}
+
+// MARK: - Repo helpers (local, MAS-safe)
+
+
+
+private extension Optional where Wrapped == String {
+  var nilIfEmpty: String? {
+    guard let s = self?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+    return s
+  }
 }
 
 extension Array where Element == VppSourceRef {
@@ -48,13 +99,13 @@ extension Array where Element == VppSourceRef {
         let rows = self.sortedByToken()
         guard !rows.isEmpty else { return "" }
         var out: [String] = []
-        out.append("Sources:")
-        out.append("| id | kind | ref |")
-        out.append("| --- | --- | --- |")
-        for r in rows {
-            // keep it simple + parseable (no escaping complexity)
-            out.append("| \(r.id) | \(r.kind.rawValue) | \(r.ref) |")
-        }
-        return out.joined(separator: "\n")
+                // Display-only: keep raw `ref` hidden.
+                out.append("| id | kind | label |")
+                out.append("| --- | --- | --- |")
+        for var r in rows {
+                            r.normalizeLegacyRepoIfNeeded()
+                            out.append("| \(r.id) | \(r.kind.rawValue) | \(r.canonicalLabel) |")
+                        }
+                return out.joined(separator: "\n")
     }
 }

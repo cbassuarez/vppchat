@@ -19,14 +19,18 @@ private struct SourceKindAnchorKey: PreferenceKey {
 }
 
 struct SourcesModal: View {
+    @AppStorage("WebRetrievalPolicy") private var webPolicyRaw: String = WebRetrievalPolicy.auto.rawValue
+    private var policy: WebRetrievalPolicy { WebRetrievalPolicy(rawValue: webPolicyRaw) ?? .auto }
     @Binding var sources: VppSources
     @Binding var sourcesTable: [VppSourceRef]
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var draftSources: VppSources = .none
     @State private var draftTable: [VppSourceRef] = []
+    
+    // repo editor
+    @State private var editingRepoIndex: Int? = nil
     
     @State private var isPickingFile: Bool = false
     @State private var filePickTargetID: String? = nil
@@ -58,17 +62,17 @@ struct SourcesModal: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("""
-                    Web search controls whether the assistant may fetch new web pages for this send.
-                    Attachments are explicit references you provide (files/URLs/repos/ssh). Attachments are included even when Web search is Off.
-                    “No sources” means: Web search Off + 0 attachments.
+                    Web access (Off/On) controls whether the assistant is allowed to fetch NEW pages beyond your attachments for this send.
+                    Attachments are explicit references you provide (files/URLs/repos/ssh). Attachments are included even when Web access is Off.
+                    When Web access is On, behavior follows Settings → Web Retrieval Policy: \(policy == .always ? "Always" : "Auto").
+                    “No sources” means: Web access Off + 0 attachments.
                     """)
                         .font(.system(size: 12))
                         .foregroundStyle(AppTheme.Colors.textSecondary)
 
-                    modePicker
 
                     sourcesSection
-
+                    policyPicker
                     footerHint
                 }
                 .padding(16)
@@ -93,8 +97,21 @@ struct SourcesModal: View {
           case .success(let urls):
             guard let url = urls.first else { return }
             if let i = draftTable.firstIndex(where: { $0.id == id }) {
-              draftTable[i].kind = .file
-              draftTable[i].ref = url.path
+                draftTable[i].kind = .file
+                draftTable[i].displayName = url.lastPathComponent
+                draftTable[i].ref = url.path // optional: keep as fallback / debug
+
+                do {
+                  let bm = try url.bookmarkData(
+                    options: [.withSecurityScope],
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                  )
+                  draftTable[i].securityBookmark = bm
+                } catch {
+                  // If bookmark creation fails, keep ref as fallback
+                  draftTable[i].securityBookmark = nil
+                }
               focusedSourceID = id
             }
           case .failure:
@@ -119,6 +136,16 @@ struct SourcesModal: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
+        .sheet(isPresented: Binding(
+                  get: { editingRepoIndex != nil },
+                  set: { if !$0 { editingRepoIndex = nil } }
+                )) {
+                  if let idx = editingRepoIndex, draftTable.indices.contains(idx) {
+                    RepoAttachSheet(source: $draftTable[idx])
+                  } else {
+                    EmptyView()
+                  }
+                }
     }
 
     // MARK: - Header
@@ -143,51 +170,6 @@ struct SourcesModal: View {
         .padding(16)
     }
 
-    // MARK: - Mode
-
-    private var modePicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Web search")
-                    .font(.system(size: 11, weight: .semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(AppTheme.Colors.textSubtle)
-                Spacer()
-            }
-
-            HStack(spacing: 6) {
-                modeChip("Off", isSelected: draftSources == .none) {
-                    withAnimation(popAnimation) { draftSources = .none }
-                }
-
-                modeChip("On", isSelected: draftSources == .web) {
-                    withAnimation(popAnimation) { draftSources = .web }
-                }
-
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    private func modeChip(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule().fill(isSelected ? StudioTheme.Colors.accentSoft : AppTheme.Colors.surface1)
-                )
-                .overlay(
-                    Capsule().stroke(
-                        isSelected ? StudioTheme.Colors.accent : AppTheme.Colors.borderSoft,
-                        lineWidth: isSelected ? 1.4 : 1
-                    )
-                )
-                .foregroundStyle(isSelected ? AppTheme.Colors.textPrimary : AppTheme.Colors.textSecondary)
-        }
-        .buttonStyle(.plain)
-    }
 
     // MARK: - Sources section
 
@@ -295,23 +277,50 @@ struct SourcesModal: View {
                         )
                         .foregroundStyle(AppTheme.Colors.textSecondary)
                       }
-                    } else {
-                      TextField(placeholder(for: ref.wrappedValue.kind), text: Binding(
-                        get: { ref.wrappedValue.ref },
-                        set: { ref.wrappedValue.ref = $0 }
-                      ))
-                      .textFieldStyle(.plain)
-                      .font(AppTheme.Typography.mono(12))
-                      .disableAutocorrection(true)
-                      .padding(10)
-                      .background(AppTheme.Colors.surface1)
-                      .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
-                      .overlay(
-                        RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
-                          .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
-                      )
-                      .focused($focusedSourceID, equals: refID)
-                    }
+                    } else if ref.wrappedValue.kind == .repo {
+                                          let idx = draftTable.firstIndex(where: { $0.id == refID }) ?? -1
+                                          HStack(spacing: 10) {
+                                            Text(ref.wrappedValue.canonicalLabel)
+                                              .font(AppTheme.Typography.mono(12))
+                                              .lineLimit(1)
+                                              .truncationMode(.middle)
+                                              .foregroundStyle(AppTheme.Colors.textPrimary)
+                    
+                                            Spacer(minLength: 8)
+                    
+                                            Button("Configure…") {
+                                              guard idx >= 0 else { return }
+                                              draftTable[idx].normalizeLegacyRepoIfNeeded()
+                                              editingRepoIndex = idx
+                                            }
+                                            .buttonStyle(.plain)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 8)
+                                            .background(AppTheme.Colors.surface1)
+                                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+                                            .overlay(
+                                              RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                                                .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                                            )
+                                            .foregroundStyle(AppTheme.Colors.textSecondary)
+                                          }
+                                        } else {
+                                          TextField(placeholder(for: ref.wrappedValue.kind), text: Binding(
+                                            get: { ref.wrappedValue.ref },
+                                            set: { ref.wrappedValue.ref = $0 }
+                                          ))
+                                          .textFieldStyle(.plain)
+                                          .font(AppTheme.Typography.mono(12))
+                                          .disableAutocorrection(true)
+                                          .padding(10)
+                                          .background(AppTheme.Colors.surface1)
+                                          .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous))
+                                          .overlay(
+                                            RoundedRectangle(cornerRadius: AppTheme.Radii.panel, style: .continuous)
+                                              .stroke(AppTheme.Colors.borderSoft, lineWidth: 1)
+                                          )
+                                          .focused($focusedSourceID, equals: refID)
+                                        }
 
                 }
 
@@ -353,7 +362,7 @@ struct SourcesModal: View {
       case .web:  return "URL"
       case .repo: return "REPO"
       case .file: return "FILE"
-      case .ssh:  return "SSH"
+      case .ssh:  return "SSH (buggy)"
       }
     }
 
@@ -472,6 +481,32 @@ struct SourcesModal: View {
         }
         .padding(.top, 2)
     }
+// MARK: Policy picker
+    private var policyPicker: some View {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          Text("Web retrieval")
+            .font(.system(size: 11, weight: .semibold))
+            .textCase(.uppercase)
+            .foregroundStyle(AppTheme.Colors.textSubtle)
+          Spacer()
+        }
+
+        Picker("", selection: Binding(
+          get: { WebRetrievalPolicy(rawValue: webPolicyRaw) ?? .auto },
+          set: { webPolicyRaw = $0.rawValue }
+        )) {
+          Text("Auto").tag(WebRetrievalPolicy.auto)
+          Text("Always").tag(WebRetrievalPolicy.always)
+        }
+        .pickerStyle(.segmented)
+
+        Text("Auto fetches only when needed. Always prefers fetching whenever web retrieval is available.")
+          .font(.system(size: 11))
+          .foregroundStyle(AppTheme.Colors.textSecondary)
+      }
+    }
+
 
     // MARK: - Buttons
 
@@ -479,8 +514,8 @@ struct SourcesModal: View {
         HStack(spacing: 10) {
             Button("Clear") {
                 withAnimation(popAnimation) {
-                    sources = .none
                     sourcesTable = []
+                    sources = .web
                 }
                 dismiss()
             }
@@ -505,8 +540,8 @@ struct SourcesModal: View {
                 .foregroundStyle(AppTheme.Colors.textSecondary)
 
             Button {
-                sources = draftSources
                 sourcesTable = draftTable
+                sources = .web
                 dismiss()
             } label: {
                 Text("Done")
@@ -533,7 +568,6 @@ struct SourcesModal: View {
     // MARK: - State plumbing
 
     private func seedFromBinding() {
-        draftSources = sources
         draftTable = sourcesTable
     }
 
@@ -573,7 +607,7 @@ struct SourcesModal: View {
     private func placeholder(for kind: VppSourceKind) -> String {
         switch kind {
         case .web:  return "https://example.com/article"
-        case .repo: return "github.com/owner/repo (optional #path @ref)"
+        case .repo: return "owner/repo (use Configure…)"
         case .file: return "Choose a file…"
         case .ssh:  return "user@host:/path or ssh://user@host/path"
         }
@@ -582,7 +616,7 @@ struct SourcesModal: View {
     private func hint(for kind: VppSourceKind) -> String {
         switch kind {
         case .web:  return "Example: https://wikipedia.org/wiki/Spinoza"
-        case .repo: return "Example: github.com/StageDevices/VPPChat#UI @main"
+        case .repo: return "Example: cbassuarez/praetorius@auto"
         case .file: return "Example: /Users/seb/Desktop/notes.md"
         case .ssh:  return "Example: seb@10.0.0.12:/var/log/app.log"
         }

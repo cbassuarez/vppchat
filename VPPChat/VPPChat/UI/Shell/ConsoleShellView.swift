@@ -183,24 +183,32 @@ private struct ConsoleSessionView: View {
     private func handleSend() {
         let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let outgoingSourcesTable = sourcesTable
+        let outgoingAssumptions = assumptions
 
-        let header = workspace.vppRuntime.makeHeader(
-            tag: workspace.vppRuntime.state.currentTag,
-            modifiers: modifiers
-        )
+        var header = workspace.vppRuntime.makeHeader(tag: workspace.vppRuntime.state.currentTag, modifiers: modifiers)
+        if let flag = assumptions.headerFlag { header += " \(flag)" }
         let composedText = "\(header)\n\(trimmed)"
-
         draftText = ""
-        sourcesTable = []
-        sources = .none
+
         let config = WorkspaceViewModel.LLMRequestConfig(
             modelID: llmConfig.defaultModelID,
             temperature: llmConfig.defaultTemperature,
             contextStrategy: llmConfig.defaultContextStrategy
         )
 
-        Task {
-            await workspace.sendPrompt(composedText, in: session.id, config: config)
+        Task { @MainActor in
+            await workspace.sendPrompt(
+                composedText,
+                in: session.id,
+                config: config,
+                assumptions: outgoingAssumptions,
+                sourcesTable: outgoingSourcesTable
+            )
         }
+        sourcesTable = []
+        sources = .none
+        assumptions = .none
+
     }
 }

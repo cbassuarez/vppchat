@@ -161,11 +161,11 @@ extension VppRuntime {
             }
             // Expect:
             // Sources:
-            // | id | kind | ref |
+            // | id | kind | label |
             // | --- | --- | --- |
             var i = start + 1
             guard i + 1 < lines.count else { return [] }
-            guard lines[i].contains("| id |") else { return [] }
+            guard lines[i].contains("| id |") && lines[i].contains("| kind |") else { return [] }
             i += 2 // skip header + separator
     
             var out: [VppSourceRef] = []
@@ -180,9 +180,10 @@ extension VppRuntime {
                 guard cols.count >= 5 else { i += 1; continue }
                 let id = cols[1]
                 let kindRaw = cols[2]
-                let ref = cols[3]
-                if let kind = VppSourceKind(rawValue: kindRaw), !id.isEmpty, !ref.isEmpty {
-                    out.append(VppSourceRef(id: id, kind: kind, ref: ref))
+                let label = cols[3]
+                                if let kind = VppSourceKind(rawValue: kindRaw), !id.isEmpty, !label.isEmpty {
+                                    // Note: assistant table is display-only; we store `ref` as label here.
+                                    out.append(VppSourceRef(id: id, kind: kind, ref: label, displayName: label))
                 }
                 i += 1
             }

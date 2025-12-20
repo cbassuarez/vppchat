@@ -142,10 +142,18 @@ struct StudioComposerView: View {
             )
         vm.selectedSessionID = targetBlock.id
         vm.touchConsoleSession(targetBlock.id)
+        let outgoingSourcesTable = sourcesTable
+        let outgoingAssumptions = assumptions
 
-            Task { @MainActor in
-                await vm.sendPrompt(composedText, in: targetBlock.id, config: cfg, assumptions: assumptions)
-            }
+        Task { @MainActor in
+            await vm.sendPrompt(
+                composedText,
+                in: targetBlock.id,
+                config: cfg,
+                assumptions: outgoingAssumptions,
+                sourcesTable: outgoingSourcesTable
+            )
+        }
         
             draft = ""
             assumptions = .none

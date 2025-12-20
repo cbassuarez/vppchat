@@ -22,6 +22,14 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var consoleContextStrategy: LLMContextStrategy =
         LLMContextStrategy.allCases.first!
     
+    // Web retrieval policy (UI setting)
+        @AppStorage("VPPChatWebRetrievalPolicy")
+        private var webPolicyRaw: String = WebRetrievalPolicy.always.rawValue
+    
+        private var webPolicy: WebRetrievalPolicy {
+            WebRetrievalPolicy(rawValue: webPolicyRaw) ?? .auto
+        }
+    
     @Published var newEntityWizardPrefillEnvID: UUID? = nil
     @Published var newEntityWizardPrefillProjectID: UUID? = nil
     @Published var newEntityWizardPrefillTrackID: UUID? = nil
@@ -290,6 +298,7 @@ isSceneWizardOnboarding = false
                     last.body,
                     in: block.id,
                     config: cfg,
+                    webPolicy: webPolicy,
                     existingUserMessageID: last.id
                 )
             }
@@ -2055,11 +2064,13 @@ newEntityWizardInitialKind = initialKind
         _ text: String,
         in sessionID: ConsoleSession.ID,
         config: LLMRequestConfig,
-        assumptions: AssumptionsConfig = .none,          // ✅ add
+        assumptions: AssumptionsConfig = .none,
+        webPolicy: WebRetrievalPolicy? = nil,
         sourcesTable: [VppSourceRef] = [],
         existingUserMessageID: UUID? = nil
     ) async {
-        print("SEND enter instanceID=\(instanceID) sessionID=\(sessionID) model=\(config.modelID)")
+        let effectiveWebPolicy = webPolicy ?? self.webPolicy
+        print("SEND enter instanceID=\(instanceID) sessionID=\(sessionID) model=\(config.modelID) webPolicy=\(effectiveWebPolicy.rawValue)")
         let index = upsertConsoleSessionIndex(for: sessionID)
         var session = consoleSessions[index]
         let timestamp = Date()
@@ -2157,24 +2168,36 @@ newEntityWizardInitialKind = initialKind
             }
             return LLMMessage(id: message.id, role: role, content: message.text)
         }
-        // ✅ ALWAYS-on base VPP system prompt (must be first system message)
-        requestMessages.insert(LLMMessage(role: .system, content: VppSystemPrompt.base), at: 0)
-        // ✅ EPHEMERAL assumptions attachment (not persisted in session.messages)
-        if let attachment = assumptions.assumptionsAttachmentText {
-            requestMessages.insert(
-                LLMMessage(role: .system, content: attachment),
-                at: 0
-            )
-        }
-        // ✅ EPHEMERAL sources instruction + table for “footer A + per-message sources table”
-        if !sourcesTable.isEmpty {
-                   let table = sourcesTable.asVppSourcesTableMarkdown()
-                  requestMessages.insert(
-                    LLMMessage(role: .system, content: VppSystemPrompt.sourcesInstruction(tableMarkdown: table)),
-                    at: 0
-                  )
-                 }
+        // ✅ Build system prefix in correct order (base must be first)
+        var systemPrefix: [LLMMessage] = []
+        systemPrefix.append(LLMMessage(role: .system, content: VppSystemPrompt.base))
 
+        // ✅ EPHEMERAL assumptions attachment (not persisted)
+        if let attachment = assumptions.assumptionsAttachmentText {
+          systemPrefix.append(LLMMessage(role: .system, content: attachment))
+        }
+
+        // ✅ EPHEMERAL sources instruction + table + resolved payload (ONE compact system message)
+        if !sourcesTable.isEmpty {
+          let table = sourcesTable.asVppSourcesTableMarkdown()
+            var content = VppSystemPrompt.sourcesInstruction(tableMarkdown: table)
+            
+                      // 🔽 resolve and include source content
+                      let resolved = await SourcesResolver.resolveSourcesPayload(
+                        sourcesTable,
+                        webPolicy: effectiveWebPolicy,
+                        githubToken: nil // later: plumb from settings/keychain
+                      )
+                      if !resolved.isEmpty {
+                        content += "\n\n" + resolved
+                      }
+            
+                      systemPrefix.append(LLMMessage(role: .system, content: content))
+        }
+        
+        // ✅ Apply prefix (base truly first)
+        requestMessages = systemPrefix + requestMessages
+        
         let request = LLMRequest(
             modelID: config.modelID,
             temperature: config.temperature,
@@ -2191,7 +2214,7 @@ newEntityWizardInitialKind = initialKind
            
                        // ✅ Make VPP compliance deterministic (no reliance on the model)
                        // For now: Sources token is derived from the known call context:
-                       let sourcesToken = sourcesTable.isEmpty ? "none" : "web"
+            let sourcesToken = sourcesTable.isEmpty ? "none" : sourcesTable.map(\.id).joined(separator: ",")
                        let coerced = coerceVppAssistantReply(response.text, sourcesToken: sourcesToken)
 
             guard let latestIndex = consoleSessions.firstIndex(where: { $0.id == sessionID }) else { return }

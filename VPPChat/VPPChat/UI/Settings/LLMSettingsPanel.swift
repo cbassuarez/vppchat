@@ -36,6 +36,7 @@ struct LLMSettingsPanel: View {
             header
             apiKeySection
             clientModeSection
+            WebRetrievalPolicyRow()
         }
         .padding(16)
         .background(
